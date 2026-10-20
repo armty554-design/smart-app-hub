@@ -88,14 +88,23 @@ describe('App Hub Launcher - Link & Icon Studio Service', () => {
     expect(reordered[reordered.length - 1].sort_order).toBe(initial.length);
   });
 
-  it('deletes an app link and re-indexes sort_order', async () => {
-    const initial = getLocalLinks();
-    const targetId = initial[0].id;
-    const remaining = await deleteAppLink(targetId, initial);
+  it('deletes an app link and re-indexes sort_order without resurrecting defaults when all are deleted', async () => {
+    let current = getLocalLinks();
+    const targetId = current[0].id;
+    const remaining = await deleteAppLink(targetId, current);
 
-    expect(remaining.length).toBe(initial.length - 1);
+    expect(remaining.length).toBe(current.length - 1);
     expect(remaining.some((l) => l.id === targetId)).toBe(false);
     expect(remaining[0].sort_order).toBe(1);
+
+    // Delete all remaining links one by one
+    current = remaining;
+    for (const item of [...current]) {
+      current = await deleteAppLink(item.id, current);
+    }
+    expect(current.length).toBe(0);
+    // Subsequent reads must stay empty and never resurrect DEFAULT_APP_LINKS
+    expect(getLocalLinks().length).toBe(0);
   });
 
   it('manages categories, folder layout modes (2-column detail/cards/icons), and admin PIN settings', async () => {

@@ -26,6 +26,7 @@ import {
   deleteCategory,
   updateHubSettings,
   pushLocalDataToSupabase,
+  isMutationInProgressOrRecent,
   setLocalLinks,
   setLocalCategories,
   setLocalSettings,
@@ -93,8 +94,15 @@ export function App() {
   const [now, setNow] = useState(new Date());
 
   const loadHubData = useCallback(async (silent = false) => {
+    if (silent && isMutationInProgressOrRecent()) {
+      return;
+    }
     if (!silent) setIsLoading(true);
     const bundle = await fetchAllHubData();
+    // หากระหว่างรอผลลัพธ์ ผู้ใช้มีการกดเพิ่ม/ลบ/แก้ไขพอดี ไม่ให้นำข้อมูลเก่ามาทับหน้าจอ
+    if (silent && isMutationInProgressOrRecent()) {
+      return;
+    }
     setLinks(bundle.links);
     setCategories(bundle.categories);
     setSettings(bundle.settings);
@@ -106,35 +114,33 @@ export function App() {
   useEffect(() => {
     loadHubData(false);
 
-    // ซิงค์ข้อมูลอัตโนมัติเมื่อสลับกลับมาเปิดหน้าเว็บหรือสลับแท็บ/เครื่อง
-    const handleVisibilityOrFocus = () => {
-      if (document.visibilityState === 'visible') {
+    // ซิงค์ข้อมูลอัตโนมัติเฉพาะเมื่อสลับแท็บกลับมา (ไม่ใช้ window.focus เพราะจะชนกับหน้าต่าง confirm ตอนกดลบ)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && !isMutationInProgressOrRecent()) {
         loadHubData(true);
       }
     };
-    window.addEventListener('focus', handleVisibilityOrFocus);
-    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
-    // เชื่อมต่อ Supabase Realtime (ถ้าเปิดใช้งาน) เพื่อซิงค์ทันทีที่มีการเพิ่ม/ลบ/แก้ไข
+    // เชื่อมต่อ Supabase Realtime เพื่อซิงค์เมื่อเครื่องอื่นมีการแก้ไข
     const supabase = getSupabaseClient();
     const channel = supabase
       ? supabase
           .channel('smart-app-hub-sync')
           .on('postgres_changes', { event: '*', schema: 'public', table: 'app_links' }, () => {
-            loadHubData(true);
+            if (!isMutationInProgressOrRecent()) loadHubData(true);
           })
           .on('postgres_changes', { event: '*', schema: 'public', table: 'categories' }, () => {
-            loadHubData(true);
+            if (!isMutationInProgressOrRecent()) loadHubData(true);
           })
           .on('postgres_changes', { event: '*', schema: 'public', table: 'app_settings' }, () => {
-            loadHubData(true);
+            if (!isMutationInProgressOrRecent()) loadHubData(true);
           })
           .subscribe()
       : null;
 
     return () => {
-      window.removeEventListener('focus', handleVisibilityOrFocus);
-      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       if (supabase && channel) {
         supabase.removeChannel(channel);
       }
@@ -237,8 +243,12 @@ export function App() {
     if (!window.confirm(`ต้องการลบลิงก์ "${link.title}" ออกจากหน้าจอโฮมใช่หรือไม่?`)) {
       return;
     }
-    const updated = await deleteAppLink(link.id, links);
-    setLinks(updated);
+    try {
+      const updated = await deleteAppLink(link.id, links);
+      setLinks(updated);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'ไม่สามารถลบลิงก์ได้');
+    }
   };
 
   const handleToggleDock = async (link: AppLink) => {

@@ -168,7 +168,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
       text: 'กำลังส่งข้อมูลลิงก์ หมวดหมู่ และการตั้งค่าทั้งหมดขึ้น Supabase...',
     });
     saveSupabaseCredentials({ url: supaUrl, anonKey: supaKey });
-    const res = await pushLocalDataToSupabase();
+    const res = await pushLocalDataToSupabase({ links, categories, settings });
     if (res.ok) {
       await onReloadFromSupabase();
       setSyncMessage({ type: 'success', text: res.message });
