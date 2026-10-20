@@ -318,6 +318,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                                       iconType={link.icon_type}
                                       iconName={link.icon_name}
                                       iconUrl={link.icon_url}
+                                      linkUrl={link.url}
                                       imageFit={link.image_fit}
                                       bgStyle={link.bg_style}
                                       iconColor={link.icon_color}
@@ -331,7 +332,9 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                                       {link.title}
                                     </p>
                                     <span className="text-[10px] text-slate-400">
-                                      {link.icon_type === 'image'
+                                      {link.icon_type === 'favicon'
+                                        ? '🌐 โลโก้จากเว็บอัตโนมัติ'
+                                        : link.icon_type === 'image'
                                         ? '🖼️ รูปภาพอัปโหลด/URL'
                                         : `✨ ไอคอน: ${link.icon_name}`}
                                     </span>

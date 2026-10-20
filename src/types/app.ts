@@ -1,4 +1,4 @@
-export type IconType = 'library' | 'image';
+export type IconType = 'library' | 'image' | 'favicon';
 export type ImageFit = 'cover' | 'contain';
 export type IconShape = 'squircle' | 'rounded' | 'circle';
 export type FolderLayout = 'icons' | 'detail-2col' | 'cards-2col';

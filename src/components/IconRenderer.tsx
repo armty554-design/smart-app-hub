@@ -1,12 +1,14 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { ICON_MAP } from '../constants/icons';
 import { IconShape, IconType, ImageFit } from '../types/app';
+import { getWebsiteFaviconUrl } from '../lib/supabase';
 import { FileCode2 } from 'lucide-react';
 
 interface IconRendererProps {
   iconType: IconType;
   iconName: string;
   iconUrl?: string;
+  linkUrl?: string;
   imageFit?: ImageFit;
   bgStyle: string;
   iconColor: string;
@@ -47,6 +49,7 @@ export const IconRenderer: React.FC<IconRendererProps> = ({
   iconType,
   iconName,
   iconUrl,
+  linkUrl,
   imageFit = 'cover',
   bgStyle,
   iconColor,
@@ -55,6 +58,19 @@ export const IconRenderer: React.FC<IconRendererProps> = ({
   badgeText,
   className = '',
 }) => {
+  const [imgFailed, setImgFailed] = useState(false);
+
+  const resolvedImageUrl =
+    iconType === 'favicon'
+      ? iconUrl || (linkUrl ? getWebsiteFaviconUrl(linkUrl) : '')
+      : iconType === 'image'
+      ? iconUrl || ''
+      : '';
+
+  useEffect(() => {
+    setImgFailed(false);
+  }, [resolvedImageUrl, iconType]);
+
   const sizeConf = SIZE_CLASSES[size];
   const radiusClass =
     shape === 'circle'
@@ -64,6 +80,9 @@ export const IconRenderer: React.FC<IconRendererProps> = ({
       : sizeConf.radiusSquircle;
 
   const IconComponent = ICON_MAP[iconName] || FileCode2;
+
+  const showImage = (iconType === 'image' || iconType === 'favicon') && Boolean(resolvedImageUrl) && !imgFailed;
+  const effectiveFit = iconType === 'favicon' ? imageFit || 'contain' : imageFit;
 
   return (
     <div className={`relative select-none ${className}`}>
@@ -80,17 +99,15 @@ export const IconRenderer: React.FC<IconRendererProps> = ({
           }}
         />
 
-        {iconType === 'image' && iconUrl ? (
+        {showImage ? (
           <img
-            src={iconUrl}
+            src={resolvedImageUrl}
             alt={iconName || 'App Icon'}
             className={`relative z-10 w-full h-full ${
-              imageFit === 'contain' ? 'object-contain p-2' : 'object-cover'
+              effectiveFit === 'contain' ? 'object-contain p-2.5' : 'object-cover'
             }`}
             draggable={false}
-            onError={(e) => {
-              (e.currentTarget as HTMLImageElement).style.display = 'none';
-            }}
+            onError={() => setImgFailed(true)}
           />
         ) : (
           <IconComponent

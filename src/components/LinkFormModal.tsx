@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { AppLink, Category, IconShape, IconType, ImageFit } from '../types/app';
 import { BG_COLOR_PRESETS, ICON_CATEGORIES, ICON_LIBRARY } from '../constants/icons';
 import { IconRenderer } from './IconRenderer';
-import { uploadIconImage } from '../lib/supabase';
+import { uploadIconImage, getWebsiteFaviconUrl, isGoogleAppsScriptUrl } from '../lib/supabase';
 import {
   X,
   Search,
@@ -15,6 +15,7 @@ import {
   Check,
   Loader2,
   Wand2,
+  Globe,
 } from 'lucide-react';
 
 interface LinkFormModalProps {
@@ -116,25 +117,33 @@ export const LinkFormModal: React.FC<LinkFormModalProps> = ({
     return matchesTab && matchesSearch;
   });
 
-  // ตรวจจับ URL ของ Google Apps Script หรือ Google Workspace เพื่อแนะนำไอคอนอัตโนมัติ
+  // ตรวจจับ URL อัตโนมัติ: ถ้าเป็น Google Apps Script จะใช้คลังไอคอน แต่ถ้าเป็นเว็บทั่วไปที่มีไอคอนอยู่แล้วจะดึง Favicon ของเว็บนั้นมาให้ทันที
   const handleAutoDetectFromUrl = (inputUrl: string) => {
     setUrl(inputUrl);
     if (editingLink) return; // ไม่ทับค่าเดิมหากกำลังแก้ไข
 
-    const lower = inputUrl.toLowerCase();
-    if (lower.includes('script.google.com')) {
+    const lower = inputUrl.toLowerCase().trim();
+    if (isGoogleAppsScriptUrl(lower)) {
+      setIconType('library');
       if (!badgeText) setBadgeText('GAS');
     } else if (lower.includes('docs.google.com/spreadsheets')) {
+      setIconType('library');
       setIconName('FileSpreadsheet');
       setBgStyle(BG_COLOR_PRESETS[0].value);
       if (!badgeText) setBadgeText('Sheets');
     } else if (lower.includes('docs.google.com/forms') || lower.includes('forms.gle')) {
+      setIconType('library');
       setIconName('ClipboardList');
       setBgStyle(BG_COLOR_PRESETS[2].value);
       if (!badgeText) setBadgeText('Form');
-    } else if (lower.includes('drive.google.com')) {
-      setIconName('FolderOpen');
-      setBgStyle(BG_COLOR_PRESETS[3].value);
+    } else {
+      const autoFavicon = getWebsiteFaviconUrl(inputUrl);
+      if (autoFavicon) {
+        setIconType('favicon');
+        setIconUrl(autoFavicon);
+        setImageFit('contain');
+        setBgStyle('#ffffff');
+      }
     }
   };
 
@@ -175,7 +184,12 @@ export const LinkFormModal: React.FC<LinkFormModalProps> = ({
     if (!/^https?:\/\//i.test(cleanUrl)) {
       cleanUrl = `https://${cleanUrl}`;
     }
-    if (iconType === 'image' && !iconUrl.trim()) {
+    const finalIconUrl =
+      iconType === 'favicon'
+        ? getWebsiteFaviconUrl(cleanUrl) || iconUrl.trim()
+        : iconUrl.trim();
+
+    if (iconType === 'image' && !finalIconUrl) {
       setFormError('กรุณาอัปโหลดรูปภาพ หรือวางลิงก์รูปภาพ (Image URL) สำหรับไอคอน');
       return;
     }
@@ -190,7 +204,7 @@ export const LinkFormModal: React.FC<LinkFormModalProps> = ({
         category_id: categoryId,
         icon_type: iconType,
         icon_name: iconName,
-        icon_url: iconUrl.trim(),
+        icon_url: finalIconUrl,
         image_fit: imageFit,
         bg_style: bgStyle,
         icon_color: iconColor,
@@ -255,7 +269,8 @@ export const LinkFormModal: React.FC<LinkFormModalProps> = ({
                 <IconRenderer
                   iconType={iconType}
                   iconName={iconName}
-                  iconUrl={iconUrl}
+                  iconUrl={iconType === 'favicon' ? getWebsiteFaviconUrl(url) || iconUrl : iconUrl}
+                  linkUrl={url}
                   imageFit={imageFit}
                   bgStyle={bgStyle}
                   iconColor={iconColor}
@@ -380,36 +395,93 @@ export const LinkFormModal: React.FC<LinkFormModalProps> = ({
                 เลือกรูปแบบไอคอนแอป
               </label>
 
-              <div className="inline-flex p-1 rounded-xl bg-slate-950 border border-white/10">
+              <div className="inline-flex flex-wrap p-1 rounded-xl bg-slate-950 border border-white/10 gap-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIconType('favicon');
+                    const fav = getWebsiteFaviconUrl(url);
+                    if (fav) setIconUrl(fav);
+                    setImageFit('contain');
+                    if (bgStyle.includes('gradient')) setBgStyle('#ffffff');
+                  }}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition ${
+                    iconType === 'favicon'
+                      ? 'bg-emerald-600 text-white shadow'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <Globe size={14} />
+                  ดึงโลโก้จากเว็บอัตโนมัติ
+                </button>
                 <button
                   type="button"
                   onClick={() => setIconType('library')}
-                  className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-medium transition ${
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition ${
                     iconType === 'library'
                       ? 'bg-indigo-600 text-white shadow'
                       : 'text-slate-400 hover:text-white'
                   }`}
                 >
                   <Sparkles size={14} />
-                  คลังไอคอนสำเร็จรูป (100+ แบบ)
+                  คลังไอคอน (100+ แบบ)
                 </button>
                 <button
                   type="button"
                   onClick={() => setIconType('image')}
-                  className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-medium transition ${
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition ${
                     iconType === 'image'
                       ? 'bg-indigo-600 text-white shadow'
                       : 'text-slate-400 hover:text-white'
                   }`}
                 >
                   <ImageIcon size={14} />
-                  อัปโหลดรูปภาพ / ลิงก์รูป (URL)
+                  อัปโหลดรูป / URL รูป
                 </button>
               </div>
             </div>
 
-            {/* โหมด 1: คลังไอคอนสำเร็จรูป */}
-            {iconType === 'library' ? (
+            {/* โหมด 0: ดึงโลโก้จากเว็บไซต์อัตโนมัติ (Favicon) */}
+            {iconType === 'favicon' ? (
+              <div className="p-4 rounded-2xl bg-emerald-950/30 border border-emerald-400/25 flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div className="space-y-1 text-center sm:text-left">
+                  <p className="text-xs sm:text-sm font-semibold text-emerald-300 flex items-center justify-center sm:justify-start gap-1.5">
+                    <Globe size={16} />
+                    ระบบดึงไอคอนโลโก้จริงจากเว็บไซต์ให้อัตโนมัติ
+                  </p>
+                  <p className="text-xs text-slate-300">
+                    {getWebsiteFaviconUrl(url)
+                      ? `ดึงโลโก้จากโดเมนของลิงก์ที่กรอกเรียบร้อยแล้ว (คุณสามารถเลือกสีพื้นหลังกรอบไอคอนด้านล่างได้)`
+                      : 'กรุณากรอกลิงก์ URL ของเว็บไซต์ด้านบน ระบบจะดึงโลโก้ของเว็บนั้นมาแสดงทันที'}
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setImageFit('contain')}
+                    className={`py-1.5 px-3 rounded-xl text-xs font-medium border transition ${
+                      imageFit === 'contain'
+                        ? 'bg-emerald-600/30 border-emerald-400 text-white'
+                        : 'bg-slate-900 border-white/10 text-slate-400'
+                    }`}
+                  >
+                    ขนาดพอดีกรอบ
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setImageFit('cover')}
+                    className={`py-1.5 px-3 rounded-xl text-xs font-medium border transition ${
+                      imageFit === 'cover'
+                        ? 'bg-emerald-600/30 border-emerald-400 text-white'
+                        : 'bg-slate-900 border-white/10 text-slate-400'
+                    }`}
+                  >
+                    เต็มกรอบ
+                  </button>
+                </div>
+              </div>
+            ) : iconType === 'library' ? (
               <div className="space-y-4">
                 {/* แถบค้นหาและหมวดหมู่ไอคอน */}
                 <div className="flex flex-col sm:flex-row gap-2.5">

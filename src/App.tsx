@@ -523,6 +523,7 @@ export function App() {
                             iconType={item.icon_type}
                             iconName={item.icon_name}
                             iconUrl={item.icon_url}
+                            linkUrl={item.url}
                             imageFit={item.image_fit}
                             bgStyle={item.bg_style}
                             iconColor={item.icon_color}
@@ -832,6 +833,7 @@ export function App() {
                       iconType={link.icon_type}
                       iconName={link.icon_name}
                       iconUrl={link.icon_url}
+                      linkUrl={link.url}
                       imageFit={link.image_fit}
                       bgStyle={link.bg_style}
                       iconColor={link.icon_color}

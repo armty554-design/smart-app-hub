@@ -55,3 +55,33 @@ export async function uploadIconImage(file: File): Promise<{ url: string }> {
   const compressedDataUrl = await compressImageToDataUrl(file, 256);
   return { url: compressedDataUrl };
 }
+
+/**
+ * ตรวจสอบว่าเป็นลิงก์ Google Apps Script หรือไม่ (ซึ่งไม่มีโลโก้เฉพาะของระบบเอง)
+ */
+export function isGoogleAppsScriptUrl(rawUrl: string): boolean {
+  const lower = (rawUrl || '').trim().toLowerCase();
+  return lower.includes('script.google.com') || lower.includes('script.googleusercontent.com');
+}
+
+/**
+ * ดึงไอคอนโลโก้จริงของเว็บไซต์ (High-Res Favicon / Touch Icon 128px) จาก URL ของเว็บนั้นโดยอัตโนมัติ
+ */
+export function getWebsiteFaviconUrl(rawUrl: string): string {
+  try {
+    let clean = rawUrl.trim();
+    if (!clean) return '';
+    if (!/^https?:\/\//i.test(clean)) {
+      clean = `https://${clean}`;
+    }
+    const parsed = new URL(clean);
+    const hostname = parsed.hostname;
+    if (!hostname || !hostname.includes('.')) return '';
+
+    // ใช้บริการ Google S2 Favicon ความละเอียดสูง (sz=128) ซึ่งรองรับทุกเว็บไซต์มาตรฐาน
+    return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(hostname)}&sz=128`;
+  } catch {
+    return '';
+  }
+}
+

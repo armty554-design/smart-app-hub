@@ -130,6 +130,7 @@ export const SpotlightModal: React.FC<SpotlightModalProps> = ({
                       iconType={item.icon_type}
                       iconName={item.icon_name}
                       iconUrl={item.icon_url}
+                      linkUrl={item.url}
                       imageFit={item.image_fit}
                       bgStyle={item.bg_style}
                       iconColor={item.icon_color}

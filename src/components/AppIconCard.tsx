@@ -115,6 +115,7 @@ export const AppIconCard: React.FC<AppIconCardProps> = ({
           iconType={link.icon_type}
           iconName={link.icon_name}
           iconUrl={link.icon_url}
+          linkUrl={link.url}
           imageFit={link.image_fit}
           bgStyle={link.bg_style}
           iconColor={link.icon_color}
