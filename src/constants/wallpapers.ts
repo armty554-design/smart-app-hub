@@ -1,47 +1,102 @@
 import { WallpaperPreset, Category, AppLink, AppSettings } from '../types/app';
 
 export const WALLPAPER_PRESETS: WallpaperPreset[] = [
+  // =====================================================================
+  // ☀️ ธีมโทนสว่าง (Light Themes - ฟ้าขาว & คลีนมินิมอล)
+  // =====================================================================
+  {
+    id: 'sky-white',
+    name: 'Sky Cloud White (ฟ้า-ขาว สว่างสะอาดตา)',
+    style:
+      'radial-gradient(circle at 15% 10%, rgba(56, 189, 248, 0.35) 0%, transparent 50%), radial-gradient(circle at 85% 20%, rgba(59, 130, 246, 0.22) 0%, transparent 50%), radial-gradient(circle at 50% 90%, rgba(186, 230, 253, 0.65) 0%, transparent 60%), linear-gradient(180deg, #e0f2fe 0%, #f0f9ff 48%, #ffffff 100%)',
+    thumbnail: 'linear-gradient(135deg, #38bdf8 0%, #bae6fd 50%, #ffffff 100%)',
+    isLight: true,
+    badge: 'แนะนำ',
+  },
+  {
+    id: 'azure-daylight',
+    name: 'Royal Azure Daylight (ฟ้าคราม-ขาว ทันสมัย)',
+    style:
+      'radial-gradient(circle at 20% 15%, rgba(37, 99, 235, 0.24) 0%, transparent 48%), radial-gradient(circle at 80% 80%, rgba(14, 165, 233, 0.25) 0%, transparent 55%), linear-gradient(165deg, #dbeafe 0%, #eff6ff 55%, #f8fafc 100%)',
+    thumbnail: 'linear-gradient(135deg, #2563eb 0%, #93c5fd 55%, #ffffff 100%)',
+    isLight: true,
+    badge: 'ยอดนิยม',
+  },
+  {
+    id: 'pearl-minimal',
+    name: 'Pearl Snow Minimal (ขาวมุก-เทาเงิน iOS Light)',
+    style:
+      'radial-gradient(circle at 20% 20%, rgba(148, 163, 184, 0.2) 0%, transparent 50%), radial-gradient(circle at 80% 75%, rgba(99, 102, 241, 0.12) 0%, transparent 55%), linear-gradient(180deg, #f1f5f9 0%, #f8fafc 50%, #ffffff 100%)',
+    thumbnail: 'linear-gradient(135deg, #cbd5e1 0%, #f1f5f9 55%, #ffffff 100%)',
+    isLight: true,
+  },
+  {
+    id: 'mint-breeze',
+    name: 'Mint Breeze Light (เขียวมิ้นต์-ขาว สบายตา)',
+    style:
+      'radial-gradient(circle at 18% 15%, rgba(16, 185, 129, 0.24) 0%, transparent 50%), radial-gradient(circle at 85% 80%, rgba(45, 212, 191, 0.25) 0%, transparent 55%), linear-gradient(180deg, #d1fae5 0%, #ecfdf5 50%, #ffffff 100%)',
+    thumbnail: 'linear-gradient(135deg, #10b981 0%, #a7f3d0 55%, #ffffff 100%)',
+    isLight: true,
+  },
+  {
+    id: 'sakura-cream',
+    name: 'Sakura Peach Light (ชมพูพีช-ขาว พาสเทล)',
+    style:
+      'radial-gradient(circle at 20% 15%, rgba(244, 114, 182, 0.24) 0%, transparent 50%), radial-gradient(circle at 80% 75%, rgba(251, 146, 60, 0.18) 0%, transparent 55%), linear-gradient(180deg, #fce7f3 0%, #fff1f2 55%, #ffffff 100%)',
+    thumbnail: 'linear-gradient(135deg, #f472b6 0%, #fbcfe8 55%, #ffffff 100%)',
+    isLight: true,
+  },
+
+  // =====================================================================
+  // 🌙 ธีมโทนมืด (Dark Themes - เข้มขรึม สปอร์ต พรีเมียม)
+  // =====================================================================
   {
     id: 'aurora-night',
     name: 'Aurora Titanium (iOS Dark)',
     style:
       'radial-gradient(circle at 15% 15%, rgba(99, 102, 241, 0.45) 0%, transparent 45%), radial-gradient(circle at 85% 25%, rgba(16, 185, 129, 0.35) 0%, transparent 50%), radial-gradient(circle at 50% 85%, rgba(168, 85, 247, 0.35) 0%, transparent 55%), linear-gradient(180deg, #090d16 0%, #0f172a 50%, #090d16 100%)',
     thumbnail: 'linear-gradient(135deg, #312e81 0%, #0f172a 50%, #064e3b 100%)',
+    isLight: false,
   },
   {
     id: 'macos-sequoia',
-    name: 'Deep Ocean Horizon',
+    name: 'Deep Ocean Horizon (น้ำเงินเข้ม)',
     style:
       'radial-gradient(circle at 20% 20%, rgba(56, 189, 248, 0.45) 0%, transparent 50%), radial-gradient(circle at 80% 75%, rgba(37, 99, 235, 0.5) 0%, transparent 55%), linear-gradient(160deg, #020617 0%, #0c4a6e 55%, #1e1b4b 100%)',
     thumbnail: 'linear-gradient(135deg, #0284c7 0%, #1e1b4b 100%)',
+    isLight: false,
   },
   {
     id: 'sunset-pro',
-    name: 'Sonoma Twilight',
+    name: 'Sonoma Twilight (ม่วง-โรสโกลด์)',
     style:
       'radial-gradient(circle at 80% 15%, rgba(244, 63, 94, 0.42) 0%, transparent 48%), radial-gradient(circle at 20% 70%, rgba(245, 158, 11, 0.32) 0%, transparent 50%), linear-gradient(165deg, #0f172a 0%, #31102f 55%, #1e1b4b 100%)',
     thumbnail: 'linear-gradient(135deg, #be123c 0%, #4c1d95 100%)',
+    isLight: false,
   },
   {
     id: 'emerald-forest',
-    name: 'Emerald Matrix',
+    name: 'Emerald Matrix (เขียวมรกตเข้ม)',
     style:
       'radial-gradient(circle at 75% 20%, rgba(16, 185, 129, 0.4) 0%, transparent 50%), radial-gradient(circle at 20% 80%, rgba(6, 182, 212, 0.35) 0%, transparent 50%), linear-gradient(180deg, #022c22 0%, #0f172a 100%)',
     thumbnail: 'linear-gradient(135deg, #059669 0%, #0f172a 100%)',
+    isLight: false,
   },
   {
     id: 'minimal-graphite',
-    name: 'Minimal Space Black',
+    name: 'Minimal Space Black (ดำกราไฟต์)',
     style:
       'radial-gradient(circle at 50% 0%, rgba(148, 163, 184, 0.18) 0%, transparent 60%), linear-gradient(180deg, #09090b 0%, #18181b 100%)',
     thumbnail: 'linear-gradient(135deg, #27272a 0%, #09090b 100%)',
+    isLight: false,
   },
   {
     id: 'cosmic-violet',
-    name: 'Cosmic Nebula',
+    name: 'Cosmic Nebula (ม่วง галแล็กซี)',
     style:
       'radial-gradient(circle at 25% 20%, rgba(192, 132, 252, 0.42) 0%, transparent 45%), radial-gradient(circle at 80% 80%, rgba(236, 72, 153, 0.35) 0%, transparent 50%), linear-gradient(160deg, #1e1b4b 0%, #090d16 100%)',
     thumbnail: 'linear-gradient(135deg, #7e22ce 0%, #be185d 100%)',
+    isLight: false,
   },
 ];
 

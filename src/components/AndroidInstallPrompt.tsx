@@ -64,11 +64,11 @@ export const AndroidInstallPrompt: React.FC<AndroidInstallModalProps> = ({ hubTi
         type="button"
         onClick={handleInstallClick}
         title="ติดตั้งแอปลงหน้าจอมือถือ Android / iOS"
-        className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-full bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/40 text-emerald-200 hover:text-white text-[11px] sm:text-xs font-semibold shadow-sm transition active:scale-95 cursor-pointer"
+        className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-full bg-emerald-600 hover:bg-emerald-500 border border-emerald-400/50 text-white text-[11px] sm:text-xs font-semibold shadow-sm transition active:scale-95 cursor-pointer"
       >
-        <Smartphone size={13} className="text-emerald-400 shrink-0" />
+        <Smartphone size={13} className="text-emerald-100 shrink-0" />
         <span className="hidden xs:inline sm:inline">ติดตั้งแอป Android</span>
-        <Download size={12} className="text-emerald-300" />
+        <Download size={12} className="text-emerald-100" />
       </button>
 
       {/* หน้าต่างแนะนำการติดตั้งลงหน้าจอมือถือ Android (กรณีเบราว์เซอร์ต้องกดผ่านเมนู หรือใช้บนเครื่องอื่น) */}

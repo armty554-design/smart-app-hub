@@ -13,6 +13,7 @@ import {
 } from '../services/linkService';
 import { AppLink, Category } from '../types/app';
 import { ICON_LIBRARY, BG_COLOR_PRESETS } from '../constants/icons';
+import { WALLPAPER_PRESETS } from '../constants/wallpapers';
 
 describe('App Hub Launcher - Link & Icon Studio Service', () => {
   beforeEach(() => {
@@ -132,17 +133,26 @@ describe('App Hub Launcher - Link & Icon Studio Service', () => {
     const settings = getLocalSettings();
     const updatedSettings = await updateHubSettings({
       ...settings,
-      admin_pin: '9988',
+      admin_pin: '248900',
+      wallpaper_id: 'sky-white',
       hub_title: 'My Company GAS Portal',
       default_folder_layout: 'detail-2col',
     });
-    expect(updatedSettings.admin_pin).toBe('9988');
+    expect(updatedSettings.admin_pin).toBe('248900');
+    expect(updatedSettings.wallpaper_id).toBe('sky-white');
     expect(updatedSettings.hub_title).toBe('My Company GAS Portal');
     expect(updatedSettings.default_folder_layout).toBe('detail-2col');
+    expect(getLocalSettings().admin_pin).toBe('248900');
+    expect(getLocalSettings().wallpaper_id).toBe('sky-white');
   });
 
-  it('provides a rich icon library and background presets', () => {
+  it('provides a rich icon library, background presets, and both Light (Sky-White) and Dark themes', () => {
     expect(ICON_LIBRARY.length).toBeGreaterThan(80);
     expect(BG_COLOR_PRESETS.length).toBeGreaterThan(15);
+    const lightThemes = WALLPAPER_PRESETS.filter((w) => w.isLight);
+    const darkThemes = WALLPAPER_PRESETS.filter((w) => !w.isLight);
+    expect(lightThemes.some((w) => w.id === 'sky-white')).toBe(true);
+    expect(lightThemes.length).toBeGreaterThanOrEqual(5);
+    expect(darkThemes.length).toBeGreaterThanOrEqual(6);
   });
 });

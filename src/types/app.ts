@@ -48,6 +48,8 @@ export interface WallpaperPreset {
   name: string;
   style: string;
   thumbnail: string;
+  isLight?: boolean;
+  badge?: string;
 }
 
 export interface BgColorPreset {

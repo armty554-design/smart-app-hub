@@ -10,6 +10,7 @@ interface AppIconCardProps {
   shape: IconShape;
   isEditMode: boolean;
   isDockItem?: boolean;
+  isLightTheme?: boolean;
   onEdit: (link: AppLink) => void;
   onDelete: (link: AppLink) => void;
   onToggleDock: (link: AppLink) => void;
@@ -20,6 +21,7 @@ export const AppIconCard: React.FC<AppIconCardProps> = ({
   shape,
   isEditMode,
   isDockItem = false,
+  isLightTheme = false,
   onEdit,
   onDelete,
   onToggleDock,
@@ -126,7 +128,11 @@ export const AppIconCard: React.FC<AppIconCardProps> = ({
 
         {/* ชื่อแอปด้านล่างไอคอน */}
         <span
-          className={`mt-1.5 text-center font-medium leading-tight tracking-tight text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.85)] line-clamp-2 ${
+          className={`mt-1.5 text-center leading-tight tracking-tight line-clamp-2 ${
+            isLightTheme
+              ? 'font-semibold text-slate-800 drop-shadow-[0_1px_2px_rgba(255,255,255,0.95)]'
+              : 'font-medium text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.85)]'
+          } ${
             isDockItem
               ? 'text-[11px] max-w-[68px] sm:max-w-[76px]'
               : 'text-[12px] sm:text-[13px] max-w-[78px] sm:max-w-[88px]'

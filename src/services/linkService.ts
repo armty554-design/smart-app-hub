@@ -334,7 +334,8 @@ export async function updateHubSettings(settings: AppSettings): Promise<AppSetti
         updated_at: new Date().toISOString(),
       });
       if (error) {
-        console.warn('Supabase updateHubSettings warning:', error.message);
+        console.error('Supabase updateHubSettings error:', error.message);
+        throw new Error(`บันทึกการตั้งค่าขึ้น Supabase ไม่สำเร็จ: ${error.message}`);
       }
     }
 

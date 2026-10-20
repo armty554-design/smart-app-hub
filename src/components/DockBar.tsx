@@ -8,6 +8,7 @@ interface DockBarProps {
   dockLinks: AppLink[];
   shape: IconShape;
   isEditMode: boolean;
+  isLightTheme?: boolean;
   onEdit: (link: AppLink) => void;
   onDelete: (link: AppLink) => void;
   onToggleDock: (link: AppLink) => void;
@@ -18,6 +19,7 @@ export const DockBar: React.FC<DockBarProps> = ({
   dockLinks,
   shape,
   isEditMode,
+  isLightTheme = false,
   onEdit,
   onDelete,
   onToggleDock,
@@ -29,7 +31,13 @@ export const DockBar: React.FC<DockBarProps> = ({
 
   return (
     <div className="fixed bottom-4 left-0 right-0 z-30 flex justify-center px-4 pointer-events-none">
-      <div className="pointer-events-auto flex items-center gap-3 sm:gap-5 px-4 sm:px-6 py-3 rounded-[28px] bg-white/12 dark:bg-slate-900/55 backdrop-blur-2xl border border-white/20 shadow-[0_20px_50px_rgba(0,0,0,0.6)] max-w-full overflow-x-auto no-scrollbar">
+      <div
+        className={`pointer-events-auto flex items-center gap-3 sm:gap-5 px-4 sm:px-6 py-3 rounded-[28px] backdrop-blur-2xl border max-w-full overflow-x-auto no-scrollbar ${
+          isLightTheme
+            ? 'bg-white/80 border-sky-200/90 shadow-[0_18px_45px_rgba(14,116,144,0.18)]'
+            : 'bg-white/12 dark:bg-slate-900/55 border-white/20 shadow-[0_20px_50px_rgba(0,0,0,0.6)]'
+        }`}
+      >
         <SortableContext items={dockLinks.map((l) => l.id)} strategy={rectSortingStrategy}>
           {dockLinks.map((link) => (
             <AppIconCard
@@ -38,6 +46,7 @@ export const DockBar: React.FC<DockBarProps> = ({
               shape={shape}
               isEditMode={isEditMode}
               isDockItem={true}
+              isLightTheme={isLightTheme}
               onEdit={onEdit}
               onDelete={onDelete}
               onToggleDock={onToggleDock}
@@ -52,10 +61,22 @@ export const DockBar: React.FC<DockBarProps> = ({
             className="flex flex-col items-center justify-center group"
             title="เพิ่มแอปลงในแถบ Dock"
           >
-            <div className="w-[62px] h-[62px] sm:w-[68px] sm:h-[68px] rounded-[18px] sm:rounded-[20px] border-2 border-dashed border-white/35 hover:border-indigo-400 bg-white/5 hover:bg-indigo-500/20 flex items-center justify-center text-white/70 group-hover:text-white transition-all">
+            <div
+              className={`w-[62px] h-[62px] sm:w-[68px] sm:h-[68px] rounded-[18px] sm:rounded-[20px] border-2 border-dashed flex items-center justify-center transition-all ${
+                isLightTheme
+                  ? 'border-sky-400/60 hover:border-sky-600 bg-sky-50/70 hover:bg-sky-100 text-sky-600'
+                  : 'border-white/35 hover:border-indigo-400 bg-white/5 hover:bg-indigo-500/20 text-white/70 group-hover:text-white'
+              }`}
+            >
               <Plus size={26} />
             </div>
-            <span className="mt-1.5 text-[11px] text-white/70 font-medium">เพิ่มใน Dock</span>
+            <span
+              className={`mt-1.5 text-[11px] font-medium ${
+                isLightTheme ? 'text-slate-700' : 'text-white/70'
+              }`}
+            >
+              เพิ่มใน Dock
+            </span>
           </button>
         )}
       </div>

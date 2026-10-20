@@ -45,6 +45,7 @@ import { IconRenderer } from './components/IconRenderer';
 import {
   Search,
   Plus,
+  Settings,
   Lock,
   Unlock,
   LayoutGrid,
@@ -332,9 +333,11 @@ export function App() {
     await pushLocalDataToSupabase();
   };
 
-  // คำนวณภาพพื้นหลัง Wallpaper
+  // คำนวณภาพพื้นหลัง Wallpaper และตรวจสอบว่าเป็นธีมโทนสว่าง (Light Theme) หรือไม่
   const activeWallpaper =
     WALLPAPER_PRESETS.find((w) => w.id === settings.wallpaper_id) || WALLPAPER_PRESETS[0];
+
+  const isLightTheme = Boolean(activeWallpaper.isLight && !settings.custom_wallpaper_url);
 
   const wallpaperStyle: React.CSSProperties = settings.custom_wallpaper_url
     ? {
@@ -381,19 +384,39 @@ export function App() {
       style={wallpaperStyle}
       className="min-h-screen w-full flex flex-col justify-between pb-36 transition-all duration-500 select-none"
     >
-      {/* แถบ Status Bar ด้านบนสุด (แยกดีไซน์ Mobile Status Bar vs Desktop Top Bar) */}
-      <header className="sticky top-0 z-20 backdrop-blur-xl bg-slate-950/40 border-b border-white/10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-2.5 flex items-center justify-between text-xs font-medium text-white/90">
+      {/* แถบ Status Bar ด้านบนสุด (แยกดีไซน์ Mobile Status Bar vs Desktop Top Bar และรองรับทั้งธีมสว่าง/ธีมมืด) */}
+      <header
+        className={`sticky top-0 z-20 backdrop-blur-xl border-b transition-colors ${
+          isLightTheme
+            ? 'bg-white/75 border-sky-200/80 shadow-sm text-slate-800'
+            : 'bg-slate-950/40 border-white/10 text-white/90'
+        }`}
+      >
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-2.5 flex items-center justify-between text-xs font-medium">
           <div className="flex items-center gap-3">
             <span className="font-bold tracking-wide text-sm">{timeString}</span>
-            <span className="hidden sm:inline text-white/40">|</span>
-            <span className="hidden sm:inline text-white/80">{dateString}</span>
-            <span className="hidden lg:inline-flex items-center gap-1.5 ml-2 px-2.5 py-0.5 rounded-full bg-indigo-500/20 border border-indigo-400/30 text-[11px] text-indigo-200">
-              <Monitor size={12} className="text-indigo-400" />
+            <span className={`hidden sm:inline ${isLightTheme ? 'text-slate-300' : 'text-white/40'}`}>|</span>
+            <span className={`hidden sm:inline ${isLightTheme ? 'text-slate-600' : 'text-white/80'}`}>
+              {dateString}
+            </span>
+            <span
+              className={`hidden lg:inline-flex items-center gap-1.5 ml-2 px-2.5 py-0.5 rounded-full border text-[11px] ${
+                isLightTheme
+                  ? 'bg-sky-100/90 border-sky-300 text-sky-800 font-semibold'
+                  : 'bg-indigo-500/20 border-indigo-400/30 text-indigo-200'
+              }`}
+            >
+              <Monitor size={12} className={isLightTheme ? 'text-sky-600' : 'text-indigo-400'} />
               Desktop Workspace Mode
             </span>
-            <span className="inline-flex lg:hidden items-center gap-1 px-2 py-0.5 rounded-full bg-white/10 text-[10px] text-slate-300">
-              <Smartphone size={11} className="text-emerald-400" />
+            <span
+              className={`inline-flex lg:hidden items-center gap-1 px-2 py-0.5 rounded-full text-[10px] ${
+                isLightTheme
+                  ? 'bg-sky-100 text-sky-800 border border-sky-200 font-semibold'
+                  : 'bg-white/10 text-slate-300'
+              }`}
+            >
+              <Smartphone size={11} className={isLightTheme ? 'text-sky-600' : 'text-emerald-400'} />
               Mobile
             </span>
           </div>
@@ -402,7 +425,13 @@ export function App() {
           <div className="flex items-center gap-2">
             {/* สถานะการเชื่อมต่อฐานข้อมูล */}
             {dataSource === 'supabase' && (
-              <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/30 text-[10px] text-emerald-300">
+              <span
+                className={`hidden sm:inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full border text-[10px] font-semibold ${
+                  isLightTheme
+                    ? 'bg-emerald-100 border-emerald-300 text-emerald-800'
+                    : 'bg-emerald-500/20 border-emerald-400/30 text-emerald-300'
+                }`}
+              >
                 <Database size={10} />
                 Cloud Sync
               </span>
@@ -411,7 +440,10 @@ export function App() {
             {/* ปุ่มไอคอนสำหรับติดตั้งลงหน้าจอ Android / มือถือ */}
             <AndroidInstallPrompt hubTitle={settings.hub_title} />
 
-            <Wifi size={14} className="text-white/80 hidden sm:block" />
+            <Wifi
+              size={14}
+              className={`hidden sm:block ${isLightTheme ? 'text-slate-600' : 'text-white/80'}`}
+            />
 
             {/* ปุ่มสลับโหมดแก้ไข (Admin Mode) */}
             {isEditMode ? (
@@ -426,8 +458,25 @@ export function App() {
                 </button>
                 <button
                   type="button"
+                  onClick={() => setIsSettingsOpen(true)}
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition ${
+                    isLightTheme
+                      ? 'bg-sky-100 hover:bg-sky-200 text-sky-900 border border-sky-300'
+                      : 'bg-white/15 hover:bg-white/25 text-white'
+                  }`}
+                  title="ตั้งค่าธีมสว่าง/มืด และรหัส PIN"
+                >
+                  <Settings size={13} />
+                  <span className="hidden sm:inline">ธีม & PIN</span>
+                </button>
+                <button
+                  type="button"
                   onClick={() => openAddLinkModal(activeCategoryId, false)}
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/15 hover:bg-white/25 text-white text-xs font-medium transition"
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition ${
+                    isLightTheme
+                      ? 'bg-slate-800 hover:bg-slate-700 text-white'
+                      : 'bg-white/15 hover:bg-white/25 text-white'
+                  }`}
                 >
                   <Plus size={13} />
                   <span className="hidden sm:inline">เพิ่มลิงก์</span>
@@ -445,7 +494,11 @@ export function App() {
               <button
                 type="button"
                 onClick={() => requestAdminAccess('dashboard')}
-                className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-white/5 hover:bg-white/15 border border-white/10 text-white/50 hover:text-white/90 text-[11px] font-medium transition"
+                className={`inline-flex items-center gap-1 px-2 py-1 rounded-full border text-[11px] font-medium transition ${
+                  isLightTheme
+                    ? 'bg-white/80 hover:bg-sky-50 border-slate-300 text-slate-600 hover:text-slate-900 shadow-sm'
+                    : 'bg-white/5 hover:bg-white/15 border-white/10 text-white/50 hover:text-white/90'
+                }`}
                 title="สำหรับผู้ดูแลระบบเท่านั้น (Admin Lock)"
               >
                 <Lock size={11} />
@@ -461,17 +514,37 @@ export function App() {
           {/* =====================================================================
               ฝั่งซ้ายบนคอมพิวเตอร์ (Desktop Sidebar Navigation - ซ่อนบนโทรศัพท์)
              ===================================================================== */}
-          <aside className="hidden lg:flex lg:col-span-3 flex-col gap-5 sticky top-16 rounded-3xl bg-slate-950/55 backdrop-blur-2xl border border-white/15 p-5 shadow-[0_20px_50px_rgba(0,0,0,0.5)]">
+          <aside
+            className={`hidden lg:flex lg:col-span-3 flex-col gap-5 sticky top-16 rounded-3xl backdrop-blur-2xl border p-5 transition-colors ${
+              isLightTheme
+                ? 'bg-white/85 border-sky-200/90 shadow-[0_18px_45px_rgba(14,116,144,0.12)] text-slate-800'
+                : 'bg-slate-950/55 border-white/15 shadow-[0_20px_50px_rgba(0,0,0,0.5)] text-white'
+            }`}
+          >
             {/* โลโก้และชื่อระบบบนคอมพิวเตอร์ */}
-            <div className="flex items-center gap-3.5 pb-4 border-b border-white/10">
+            <div
+              className={`flex items-center gap-3.5 pb-4 border-b ${
+                isLightTheme ? 'border-slate-200' : 'border-white/10'
+              }`}
+            >
               <img
                 src="/app-icon.svg"
                 alt="App Hub Logo"
                 className="w-12 h-12 rounded-2xl shadow-lg border border-white/20 shrink-0"
               />
               <div className="min-w-0">
-                <h2 className="text-base font-bold text-white truncate">{settings.hub_title}</h2>
-                <p className="text-[11px] text-indigo-300 truncate">
+                <h2
+                  className={`text-base font-bold truncate ${
+                    isLightTheme ? 'text-slate-900' : 'text-white'
+                  }`}
+                >
+                  {settings.hub_title}
+                </h2>
+                <p
+                  className={`text-[11px] truncate ${
+                    isLightTheme ? 'text-sky-700 font-medium' : 'text-indigo-300'
+                  }`}
+                >
                   {settings.hub_subtitle || 'Google Apps Script Hub'}
                 </p>
               </div>
@@ -481,20 +554,34 @@ export function App() {
             <button
               type="button"
               onClick={() => setIsSpotlightOpen(true)}
-              className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl bg-white/10 hover:bg-white/15 border border-white/15 text-xs text-white/80 transition"
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl border text-xs transition ${
+                isLightTheme
+                  ? 'bg-sky-50/90 hover:bg-sky-100/80 border-sky-200/90 text-slate-700'
+                  : 'bg-white/10 hover:bg-white/15 border-white/15 text-white/80'
+              }`}
             >
               <span className="flex items-center gap-2">
-                <Search size={15} className="text-indigo-400" />
+                <Search size={15} className={isLightTheme ? 'text-sky-600' : 'text-indigo-400'} />
                 <span>ค้นหาระบบด่วน...</span>
               </span>
-              <kbd className="px-1.5 py-0.5 text-[10px] font-mono rounded bg-black/40 text-slate-300 border border-white/10">
+              <kbd
+                className={`px-1.5 py-0.5 text-[10px] font-mono rounded border ${
+                  isLightTheme
+                    ? 'bg-white text-slate-600 border-slate-200'
+                    : 'bg-black/40 text-slate-300 border-white/10'
+                }`}
+              >
                 Ctrl K
               </kbd>
             </button>
 
             {/* รายการหมวดหมู่ / โฟลเดอร์ สำหรับคลิกบนจอคอมพิวเตอร์ */}
             <div className="space-y-1.5">
-              <div className="px-2 flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-2">
+              <div
+                className={`px-2 flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider mb-2 ${
+                  isLightTheme ? 'text-slate-500' : 'text-slate-400'
+                }`}
+              >
                 <span>หมวดหมู่ระบบงาน</span>
                 <span>{visibleLinks.length} แอป</span>
               </div>
@@ -504,7 +591,11 @@ export function App() {
                 onClick={() => setActiveCategoryId('all')}
                 className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-xs font-medium transition ${
                   activeCategoryId === 'all'
-                    ? 'bg-indigo-600 text-white font-semibold shadow-lg shadow-indigo-600/30'
+                    ? isLightTheme
+                      ? 'bg-sky-600 text-white font-semibold shadow-md shadow-sky-500/25'
+                      : 'bg-indigo-600 text-white font-semibold shadow-lg shadow-indigo-600/30'
+                    : isLightTheme
+                    ? 'text-slate-700 hover:bg-sky-50 hover:text-sky-900'
                     : 'text-slate-300 hover:bg-white/10 hover:text-white'
                 }`}
               >
@@ -512,7 +603,15 @@ export function App() {
                   <LayoutGrid size={15} />
                   <span>รวมทุกระบบ (All Apps)</span>
                 </span>
-                <span className="px-2 py-0.5 rounded-full text-[10px] bg-black/25">
+                <span
+                  className={`px-2 py-0.5 rounded-full text-[10px] ${
+                    activeCategoryId === 'all'
+                      ? 'bg-black/20 text-white'
+                      : isLightTheme
+                      ? 'bg-slate-200/80 text-slate-700'
+                      : 'bg-black/25'
+                  }`}
+                >
                   {visibleLinks.length}
                 </span>
               </button>
@@ -527,7 +626,11 @@ export function App() {
                       onClick={() => setActiveCategoryId(cat.id)}
                       className={`flex-1 flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-xs font-medium transition min-w-0 ${
                         isActive
-                          ? 'bg-indigo-600 text-white font-semibold shadow-lg shadow-indigo-600/30'
+                          ? isLightTheme
+                            ? 'bg-sky-600 text-white font-semibold shadow-md shadow-sky-500/25'
+                            : 'bg-indigo-600 text-white font-semibold shadow-lg shadow-indigo-600/30'
+                          : isLightTheme
+                          ? 'text-slate-700 hover:bg-sky-50 hover:text-sky-900'
                           : 'text-slate-300 hover:bg-white/10 hover:text-white'
                       }`}
                     >
@@ -538,7 +641,15 @@ export function App() {
                         />
                         <span className="truncate">{cat.name}</span>
                       </span>
-                      <span className="px-2 py-0.5 rounded-full text-[10px] bg-black/25 shrink-0">
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-[10px] shrink-0 ${
+                          isActive
+                            ? 'bg-black/20 text-white'
+                            : isLightTheme
+                            ? 'bg-slate-200/80 text-slate-700'
+                            : 'bg-black/25'
+                        }`}
+                      >
                         {count}
                       </span>
                     </button>
@@ -547,7 +658,11 @@ export function App() {
                       type="button"
                       onClick={() => setOpenedFolderCategory(cat)}
                       title={`เปิดหน้าต่างโฟลเดอร์ "${cat.name}" แบบขยาย`}
-                      className="p-2.5 rounded-2xl bg-white/5 hover:bg-indigo-500/30 text-slate-300 hover:text-white border border-white/10 transition shrink-0"
+                      className={`p-2.5 rounded-2xl border transition shrink-0 ${
+                        isLightTheme
+                          ? 'bg-slate-100/80 hover:bg-sky-100 text-slate-600 hover:text-sky-800 border-slate-200'
+                          : 'bg-white/5 hover:bg-indigo-500/30 text-slate-300 hover:text-white border-white/10'
+                      }`}
                     >
                       <Folder size={14} />
                     </button>
@@ -558,8 +673,16 @@ export function App() {
 
             {/* รายการปักหมุดด่วน (Pinned Dock) บน Sidebar คอมพิวเตอร์ */}
             {dockLinks.length > 0 && (
-              <div className="pt-4 border-t border-white/10 space-y-2">
-                <div className="px-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-amber-300">
+              <div
+                className={`pt-4 border-t space-y-2 ${
+                  isLightTheme ? 'border-slate-200' : 'border-white/10'
+                }`}
+              >
+                <div
+                  className={`px-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider ${
+                    isLightTheme ? 'text-amber-600' : 'text-amber-300'
+                  }`}
+                >
                   <Pin size={12} />
                   <span>ระบบที่ใช้บ่อย (Pinned)</span>
                 </div>
@@ -574,7 +697,11 @@ export function App() {
                           window.open(item.url, '_blank', 'noopener,noreferrer');
                         }
                       }}
-                      className="group flex items-center justify-between gap-2.5 p-2 rounded-2xl bg-white/5 hover:bg-white/12 border border-white/10 cursor-pointer transition"
+                      className={`group flex items-center justify-between gap-2.5 p-2 rounded-2xl border cursor-pointer transition ${
+                        isLightTheme
+                          ? 'bg-sky-50/60 hover:bg-sky-100/80 border-sky-200/70'
+                          : 'bg-white/5 hover:bg-white/12 border-white/10'
+                      }`}
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
                         <div className="scale-90 origin-left shrink-0">
@@ -591,15 +718,32 @@ export function App() {
                           />
                         </div>
                         <div className="min-w-0">
-                          <p className="text-xs font-semibold text-white truncate group-hover:text-indigo-200">
+                          <p
+                            className={`text-xs font-semibold truncate ${
+                              isLightTheme
+                                ? 'text-slate-800 group-hover:text-sky-700'
+                                : 'text-white group-hover:text-indigo-200'
+                            }`}
+                          >
                             {item.title}
                           </p>
-                          <p className="text-[10px] text-slate-400 truncate">
+                          <p
+                            className={`text-[10px] truncate ${
+                              isLightTheme ? 'text-slate-500' : 'text-slate-400'
+                            }`}
+                          >
                             {item.description || 'คลิกเพื่อเปิดใช้งาน'}
                           </p>
                         </div>
                       </div>
-                      <ExternalLink size={12} className="text-slate-400 group-hover:text-white shrink-0 mr-1" />
+                      <ExternalLink
+                        size={12}
+                        className={`shrink-0 mr-1 ${
+                          isLightTheme
+                            ? 'text-slate-400 group-hover:text-sky-700'
+                            : 'text-slate-400 group-hover:text-white'
+                        }`}
+                      />
                     </div>
                   ))}
                 </div>
@@ -613,12 +757,22 @@ export function App() {
           <main className="lg:col-span-9 w-full">
             {/* ส่วนหัวสำหรับหน้าจอมือถือ (Mobile Header - แสดงเฉพาะจอโทรศัพท์/แท็บเล็ตแนวตั้ง) */}
             <div className="flex lg:hidden flex-col items-center text-center mb-5">
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 border border-white/15 text-[11px] text-indigo-200 mb-2 backdrop-blur-md">
-                <Sparkles size={12} className="text-indigo-400" />
+              <div
+                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-[11px] mb-2 backdrop-blur-md ${
+                  isLightTheme
+                    ? 'bg-white/80 border-sky-200 text-sky-800 font-medium shadow-sm'
+                    : 'bg-white/10 border-white/15 text-indigo-200'
+                }`}
+              >
+                <Sparkles size={12} className={isLightTheme ? 'text-sky-600' : 'text-indigo-400'} />
                 <span>{settings.hub_subtitle || 'Google Apps Script & Web App Launcher'}</span>
               </div>
 
-              <h1 className="text-2xl font-bold tracking-tight text-white drop-shadow-sm">
+              <h1
+                className={`text-2xl font-bold tracking-tight ${
+                  isLightTheme ? 'text-slate-900' : 'text-white drop-shadow-sm'
+                }`}
+              >
                 {settings.hub_title}
               </h1>
 
@@ -627,20 +781,34 @@ export function App() {
                 <button
                   type="button"
                   onClick={() => setIsSpotlightOpen(true)}
-                  className="flex-1 flex items-center justify-between px-4 py-2.5 rounded-2xl bg-white/12 hover:bg-white/18 backdrop-blur-xl border border-white/20 text-left text-xs text-white/80 shadow-lg transition"
+                  className={`flex-1 flex items-center justify-between px-4 py-2.5 rounded-2xl backdrop-blur-xl border text-left text-xs shadow-lg transition ${
+                    isLightTheme
+                      ? 'bg-white/85 hover:bg-white border-sky-200/90 text-slate-700'
+                      : 'bg-white/12 hover:bg-white/18 border-white/20 text-white/80'
+                  }`}
                 >
                   <span className="flex items-center gap-2">
-                    <Search size={15} className="text-indigo-300" />
+                    <Search size={15} className={isLightTheme ? 'text-sky-600' : 'text-indigo-300'} />
                     <span>ค้นหาแอป, ระบบงาน, ลิงก์...</span>
                   </span>
                 </button>
 
-                <div className="inline-flex items-center p-1 rounded-2xl bg-white/12 backdrop-blur-xl border border-white/20 shadow-lg">
+                <div
+                  className={`inline-flex items-center p-1 rounded-2xl backdrop-blur-xl border shadow-lg ${
+                    isLightTheme ? 'bg-white/85 border-sky-200/90' : 'bg-white/12 border-white/20'
+                  }`}
+                >
                   <button
                     type="button"
                     onClick={() => setViewMode('grid')}
                     className={`p-2 rounded-xl transition ${
-                      viewMode === 'grid' ? 'bg-indigo-600 text-white shadow' : 'text-white/75'
+                      viewMode === 'grid'
+                        ? isLightTheme
+                          ? 'bg-sky-600 text-white shadow'
+                          : 'bg-indigo-600 text-white shadow'
+                        : isLightTheme
+                        ? 'text-slate-600'
+                        : 'text-white/75'
                     }`}
                   >
                     <LayoutGrid size={15} />
@@ -649,7 +817,13 @@ export function App() {
                     type="button"
                     onClick={() => setViewMode('folders')}
                     className={`p-2 rounded-xl transition ${
-                      viewMode === 'folders' ? 'bg-indigo-600 text-white shadow' : 'text-white/75'
+                      viewMode === 'folders'
+                        ? isLightTheme
+                          ? 'bg-sky-600 text-white shadow'
+                          : 'bg-indigo-600 text-white shadow'
+                        : isLightTheme
+                        ? 'text-slate-600'
+                        : 'text-white/75'
                     }`}
                   >
                     <Folder size={15} />
@@ -658,7 +832,13 @@ export function App() {
                     type="button"
                     onClick={() => setViewMode('detail-2col')}
                     className={`p-2 rounded-xl transition ${
-                      viewMode === 'detail-2col' ? 'bg-indigo-600 text-white shadow' : 'text-white/75'
+                      viewMode === 'detail-2col'
+                        ? isLightTheme
+                          ? 'bg-sky-600 text-white shadow'
+                          : 'bg-indigo-600 text-white shadow'
+                        : isLightTheme
+                        ? 'text-slate-600'
+                        : 'text-white/75'
                     }`}
                   >
                     <Rows3 size={15} />
@@ -668,29 +848,53 @@ export function App() {
             </div>
 
             {/* ส่วนหัวสำหรับหน้าจอคอมพิวเตอร์ (Desktop Workspace Header - แสดงเฉพาะจอคอมฯ) */}
-            <div className="hidden lg:flex items-center justify-between gap-4 mb-6 p-5 rounded-3xl bg-slate-950/50 backdrop-blur-2xl border border-white/15 shadow-xl">
+            <div
+              className={`hidden lg:flex items-center justify-between gap-4 mb-6 p-5 rounded-3xl backdrop-blur-2xl border shadow-xl transition-colors ${
+                isLightTheme
+                  ? 'bg-white/85 border-sky-200/90 shadow-sky-900/5'
+                  : 'bg-slate-950/50 border-white/15'
+              }`}
+            >
               <div>
                 <div className="flex items-center gap-2.5">
-                  <h1 className="text-2xl font-bold text-white tracking-tight">
+                  <h1
+                    className={`text-2xl font-bold tracking-tight ${
+                      isLightTheme ? 'text-slate-900' : 'text-white'
+                    }`}
+                  >
                     {activeCategoryObj ? activeCategoryObj.name : settings.hub_title}
                   </h1>
-                  <span className="px-2.5 py-0.5 rounded-full bg-indigo-500/20 border border-indigo-400/30 text-xs font-semibold text-indigo-200">
+                  <span
+                    className={`px-2.5 py-0.5 rounded-full border text-xs font-semibold ${
+                      isLightTheme
+                        ? 'bg-sky-100 border-sky-300 text-sky-800'
+                        : 'bg-indigo-500/20 border-indigo-400/30 text-indigo-200'
+                    }`}
+                  >
                     {activeCategoryId === 'all' ? `${visibleLinks.length} ระบบทั้งหมด` : `${mainGridLinks.length} ระบบในหมวดนี้`}
                   </span>
                 </div>
-                <p className="text-xs text-slate-300 mt-1">
+                <p className={`text-xs mt-1 ${isLightTheme ? 'text-slate-600' : 'text-slate-300'}`}>
                   {settings.hub_subtitle || 'คลิกที่ไอคอนเพื่อเปิดลิงก์ระบบงาน หรือสลับมุมมองตาราง 2 คอลัมน์ด้านขวา'}
                 </p>
               </div>
 
               {/* สวิตช์สลับมุมมองขนาดใหญ่สำหรับหน้าจอคอมพิวเตอร์ */}
-              <div className="flex items-center gap-2 bg-slate-900/90 p-1.5 rounded-2xl border border-white/15">
+              <div
+                className={`flex items-center gap-2 p-1.5 rounded-2xl border ${
+                  isLightTheme ? 'bg-slate-100/90 border-slate-200' : 'bg-slate-900/90 border-white/15'
+                }`}
+              >
                 <button
                   type="button"
                   onClick={() => setViewMode('grid')}
                   className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold transition ${
                     viewMode === 'grid'
-                      ? 'bg-indigo-600 text-white shadow'
+                      ? isLightTheme
+                        ? 'bg-sky-600 text-white shadow'
+                        : 'bg-indigo-600 text-white shadow'
+                      : isLightTheme
+                      ? 'text-slate-600 hover:text-slate-900'
                       : 'text-slate-300 hover:text-white'
                   }`}
                 >
@@ -702,7 +906,11 @@ export function App() {
                   onClick={() => setViewMode('folders')}
                   className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold transition ${
                     viewMode === 'folders'
-                      ? 'bg-indigo-600 text-white shadow'
+                      ? isLightTheme
+                        ? 'bg-sky-600 text-white shadow'
+                        : 'bg-indigo-600 text-white shadow'
+                      : isLightTheme
+                      ? 'text-slate-600 hover:text-slate-900'
                       : 'text-slate-300 hover:text-white'
                   }`}
                 >
@@ -714,7 +922,11 @@ export function App() {
                   onClick={() => setViewMode('detail-2col')}
                   className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold transition ${
                     viewMode === 'detail-2col'
-                      ? 'bg-indigo-600 text-white shadow'
+                      ? isLightTheme
+                        ? 'bg-sky-600 text-white shadow'
+                        : 'bg-indigo-600 text-white shadow'
+                      : isLightTheme
+                      ? 'text-slate-600 hover:text-slate-900'
                       : 'text-slate-300 hover:text-white'
                   }`}
                 >
@@ -726,20 +938,27 @@ export function App() {
 
         {/* แถบแจ้งเตือนโหมดแก้ไข (Admin Edit Banner) */}
         {isEditMode && (
-          <div className="mb-5 p-3.5 rounded-2xl bg-indigo-950/75 border border-indigo-400/40 backdrop-blur-xl flex flex-wrap items-center justify-between gap-3 shadow-xl animate-fade-in">
+          <div className="mb-5 p-3.5 rounded-2xl bg-indigo-950/85 border border-indigo-400/40 backdrop-blur-xl flex flex-wrap items-center justify-between gap-3 shadow-xl animate-fade-in">
             <div className="flex items-center gap-2.5 text-xs text-indigo-100">
               <Unlock size={16} className="text-emerald-400 shrink-0" />
               <span>
-                <strong>โหมดแอดมิน:</strong> เปิดตารางจัดการข้อมูลหลังบ้าน (CMS) หรือลากไอคอนบนหน้าจอเพื่อจัดเรียงได้ทันที
+                <strong>โหมดแอดมิน:</strong> เปิดตารางจัดการหลังบ้าน (CMS), เปลี่ยนธีมสว่าง/มืด หรือลากไอคอนจัดเรียงได้ทันที
               </span>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={() => setIsAdminDashboardOpen(true)}
                 className="px-3.5 py-1.5 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white text-xs font-semibold flex items-center gap-1.5 shadow transition"
               >
-                <LayoutDashboard size={14} /> เปิดตารางจัดการหลังบ้าน (CMS)
+                <LayoutDashboard size={14} /> ตารางจัดการหลังบ้าน (CMS)
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsSettingsOpen(true)}
+                className="px-3 py-1.5 rounded-xl bg-sky-500/25 hover:bg-sky-500/35 border border-sky-400/40 text-sky-100 text-xs font-semibold flex items-center gap-1.5 transition"
+              >
+                <Settings size={14} /> ตั้งค่าธีม & รหัส PIN
               </button>
               <button
                 type="button"
@@ -760,7 +979,11 @@ export function App() {
               onClick={() => setActiveCategoryId('all')}
               className={`px-3.5 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition backdrop-blur-md ${
                 activeCategoryId === 'all'
-                  ? 'bg-white text-slate-950 shadow-md font-semibold'
+                  ? isLightTheme
+                    ? 'bg-sky-600 text-white shadow-md font-semibold'
+                    : 'bg-white text-slate-950 shadow-md font-semibold'
+                  : isLightTheme
+                  ? 'bg-white/80 hover:bg-white text-slate-700 border border-sky-200/90 shadow-sm'
                   : 'bg-white/10 hover:bg-white/20 text-white/85 border border-white/15'
               }`}
             >
@@ -778,7 +1001,11 @@ export function App() {
                     onDoubleClick={() => setOpenedFolderCategory(cat)}
                     className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition backdrop-blur-md ${
                       isActive
-                        ? 'bg-white text-slate-950 shadow-md font-semibold'
+                        ? isLightTheme
+                          ? 'bg-sky-600 text-white shadow-md font-semibold'
+                          : 'bg-white text-slate-950 shadow-md font-semibold'
+                        : isLightTheme
+                        ? 'bg-white/80 hover:bg-white text-slate-700 border border-sky-200/90 shadow-sm'
                         : 'bg-white/10 hover:bg-white/20 text-white/85 border border-white/15'
                     }`}
                   >
@@ -789,7 +1016,13 @@ export function App() {
                     <span>{cat.name}</span>
                     <span
                       className={`text-[10px] ${
-                        isActive ? 'text-slate-600' : 'text-white/60'
+                        isActive
+                          ? isLightTheme
+                            ? 'text-sky-100'
+                            : 'text-slate-600'
+                          : isLightTheme
+                          ? 'text-slate-500'
+                          : 'text-white/60'
                       }`}
                     >
                       {count}
@@ -799,7 +1032,11 @@ export function App() {
                     type="button"
                     onClick={() => setOpenedFolderCategory(cat)}
                     title={`เปิดป๊อปอัปโฟลเดอร์ "${cat.name}"`}
-                    className="p-1.5 rounded-full bg-white/8 hover:bg-indigo-500/40 text-white/70 hover:text-white border border-white/10 transition"
+                    className={`p-1.5 rounded-full border transition ${
+                      isLightTheme
+                        ? 'bg-white/80 hover:bg-sky-100 text-slate-600 hover:text-sky-800 border-sky-200'
+                        : 'bg-white/8 hover:bg-indigo-500/40 text-white/70 hover:text-white border-white/10'
+                    }`}
                   >
                     <Folder size={12} />
                   </button>
@@ -828,16 +1065,27 @@ export function App() {
                 <div
                   key={cat.id}
                   onClick={() => setOpenedFolderCategory(cat)}
-                  className="group cursor-pointer rounded-[32px] bg-white/12 hover:bg-white/18 backdrop-blur-2xl border border-white/20 p-4 shadow-xl transition-transform hover:scale-[1.02] active:scale-98 flex flex-col items-center"
+                  className={`group cursor-pointer rounded-[32px] backdrop-blur-2xl border p-4 shadow-xl transition-transform hover:scale-[1.02] active:scale-98 flex flex-col items-center ${
+                    isLightTheme
+                      ? 'bg-white/80 hover:bg-white border-sky-200/90 shadow-sky-900/5'
+                      : 'bg-white/12 hover:bg-white/18 border-white/20'
+                  }`}
                 >
                   {/* มินิไอคอน 3x3 ในโฟลเดอร์ */}
-                  <div className="w-36 h-36 rounded-[26px] bg-slate-950/35 border border-white/10 p-3 grid grid-cols-3 grid-rows-3 gap-2 items-center justify-items-center">
+                  <div
+                    className={`w-36 h-36 rounded-[26px] border p-3 grid grid-cols-3 grid-rows-3 gap-2 items-center justify-items-center ${
+                      isLightTheme
+                        ? 'bg-sky-50/80 border-sky-200/80'
+                        : 'bg-slate-950/35 border-white/10'
+                    }`}
+                  >
                     {catLinks.slice(0, 9).map((item) => (
                       <div key={item.id} className="scale-[0.65] origin-center">
                         <IconRenderer
                           iconType={item.icon_type}
                           iconName={item.icon_name}
                           iconUrl={item.icon_url}
+                          linkUrl={item.url}
                           imageFit={item.image_fit}
                           bgStyle={item.bg_style}
                           iconColor={item.icon_color}
@@ -847,10 +1095,24 @@ export function App() {
                       </div>
                     ))}
                   </div>
-                  <span className="mt-3 text-sm font-semibold text-white">{cat.name}</span>
+                  <span
+                    className={`mt-3 text-sm font-semibold ${
+                      isLightTheme ? 'text-slate-800' : 'text-white'
+                    }`}
+                  >
+                    {cat.name}
+                  </span>
                   <div className="flex items-center gap-1.5 mt-0.5">
-                    <span className="text-[11px] text-white/60">{catLinks.length} แอป</span>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/25 border border-indigo-400/30 text-indigo-200">
+                    <span className={`text-[11px] ${isLightTheme ? 'text-slate-500' : 'text-white/60'}`}>
+                      {catLinks.length} แอป
+                    </span>
+                    <span
+                      className={`text-[10px] px-2 py-0.5 rounded-full border ${
+                        isLightTheme
+                          ? 'bg-sky-100 border-sky-300 text-sky-800 font-medium'
+                          : 'bg-indigo-500/25 border-indigo-400/30 text-indigo-200'
+                      }`}
+                    >
                       {(cat.layout || 'detail-2col') === 'detail-2col'
                         ? '2 คอลัมน์ (เว็บ+คำอธิบาย)'
                         : cat.layout === 'cards-2col'
@@ -865,7 +1127,13 @@ export function App() {
         ) : viewMode === 'detail-2col' ? (
           /* มุมมองตาราง 2 คอลัมน์ (คอลัมน์ที่ 1: เว็บที่ต้องการ | คอลัมน์ที่ 2: คำอธิบาย) */
           <div className="space-y-3 py-1">
-            <div className="grid grid-cols-12 gap-3 px-4 py-2.5 rounded-2xl bg-slate-950/65 backdrop-blur-xl border border-white/15 text-xs font-semibold text-indigo-300">
+            <div
+              className={`grid grid-cols-12 gap-3 px-4 py-2.5 rounded-2xl backdrop-blur-xl border text-xs font-semibold ${
+                isLightTheme
+                  ? 'bg-sky-100/90 border-sky-200 text-sky-900'
+                  : 'bg-slate-950/65 border-white/15 text-indigo-300'
+              }`}
+            >
               <div className="col-span-5 sm:col-span-4">คอลัมน์ที่ 1 : เว็บ / แอปที่ต้องการ</div>
               <div className="col-span-7 sm:col-span-8">คอลัมน์ที่ 2 : คำอธิบายการใช้งาน</div>
             </div>
@@ -883,10 +1151,18 @@ export function App() {
                     window.open(link.url, '_blank', 'noopener,noreferrer');
                   }
                 }}
-                className="group grid grid-cols-12 gap-3 items-center p-3.5 rounded-2xl bg-white/10 hover:bg-white/16 backdrop-blur-xl border border-white/15 hover:border-indigo-400/50 shadow-lg cursor-pointer transition-all"
+                className={`group grid grid-cols-12 gap-3 items-center p-3.5 rounded-2xl backdrop-blur-xl border shadow-lg cursor-pointer transition-all ${
+                  isLightTheme
+                    ? 'bg-white/85 hover:bg-white border-sky-200/90 hover:border-sky-400 shadow-sky-900/5'
+                    : 'bg-white/10 hover:bg-white/16 border-white/15 hover:border-indigo-400/50'
+                }`}
               >
                 {/* คอลัมน์ที่ 1: ไอคอน + ชื่อเว็บ */}
-                <div className="col-span-5 sm:col-span-4 flex items-center gap-3 min-w-0 pr-2 border-r border-white/15">
+                <div
+                  className={`col-span-5 sm:col-span-4 flex items-center gap-3 min-w-0 pr-2 border-r ${
+                    isLightTheme ? 'border-slate-200' : 'border-white/15'
+                  }`}
+                >
                   <div className="shrink-0 transition-transform group-hover:scale-105">
                     <IconRenderer
                       iconType={link.icon_type}
@@ -902,10 +1178,20 @@ export function App() {
                     />
                   </div>
                   <div className="min-w-0">
-                    <p className="text-xs sm:text-sm font-semibold text-white group-hover:text-indigo-200 truncate">
+                    <p
+                      className={`text-xs sm:text-sm font-semibold truncate ${
+                        isLightTheme
+                          ? 'text-slate-900 group-hover:text-sky-700'
+                          : 'text-white group-hover:text-indigo-200'
+                      }`}
+                    >
                       {link.title}
                     </p>
-                    <span className="inline-flex items-center gap-1 text-[10px] text-indigo-300">
+                    <span
+                      className={`inline-flex items-center gap-1 text-[10px] ${
+                        isLightTheme ? 'text-sky-600 font-medium' : 'text-indigo-300'
+                      }`}
+                    >
                       กดเปิดเว็บ <ExternalLink size={10} />
                     </span>
                   </div>
@@ -914,10 +1200,20 @@ export function App() {
                 {/* คอลัมน์ที่ 2: คำอธิบาย */}
                 <div className="col-span-7 sm:col-span-8 flex items-center justify-between gap-3 pl-1 min-w-0">
                   <div className="min-w-0">
-                    <p className="text-xs sm:text-sm text-white/90 leading-relaxed line-clamp-2">
+                    <p
+                      className={`text-xs sm:text-sm leading-relaxed line-clamp-2 ${
+                        isLightTheme ? 'text-slate-700' : 'text-white/90'
+                      }`}
+                    >
                       {link.description || 'ไม่มีคำอธิบาย (เข้าโหมดจัดการเพื่อเพิ่มคำอธิบายได้)'}
                     </p>
-                    <p className="text-[10px] text-white/50 font-mono truncate mt-0.5">{link.url}</p>
+                    <p
+                      className={`text-[10px] font-mono truncate mt-0.5 ${
+                        isLightTheme ? 'text-slate-400' : 'text-white/50'
+                      }`}
+                    >
+                      {link.url}
+                    </p>
                   </div>
 
                   {isEditMode && (
@@ -954,7 +1250,11 @@ export function App() {
               <button
                 type="button"
                 onClick={() => openAddLinkModal(activeCategoryId, false)}
-                className="w-full py-3.5 px-4 rounded-2xl border-2 border-dashed border-white/25 hover:border-indigo-400 bg-white/8 hover:bg-indigo-500/20 flex items-center justify-center gap-2 text-xs sm:text-sm font-medium text-white/85 hover:text-white transition"
+                className={`w-full py-3.5 px-4 rounded-2xl border-2 border-dashed flex items-center justify-center gap-2 text-xs sm:text-sm font-medium transition ${
+                  isLightTheme
+                    ? 'border-sky-300 hover:border-sky-500 bg-white/70 hover:bg-sky-50 text-sky-800'
+                    : 'border-white/25 hover:border-indigo-400 bg-white/8 hover:bg-indigo-500/20 text-white/85 hover:text-white'
+                }`}
               >
                 <Plus size={18} />
                 เพิ่มลิงก์และคำอธิบายใหม่ (เฉพาะ Admin)
@@ -973,7 +1273,11 @@ export function App() {
               strategy={rectSortingStrategy}
             >
               <div
-                className={`grid ${gridColsClass} gap-y-7 gap-x-3 sm:gap-x-6 py-2 lg:p-6 lg:rounded-3xl lg:bg-slate-950/40 lg:backdrop-blur-2xl lg:border lg:border-white/15 lg:shadow-xl justify-items-center`}
+                className={`grid ${gridColsClass} gap-y-7 gap-x-3 sm:gap-x-6 py-2 lg:p-6 lg:rounded-3xl lg:backdrop-blur-2xl lg:border lg:shadow-xl justify-items-center transition-colors ${
+                  isLightTheme
+                    ? 'lg:bg-white/75 lg:border-sky-200/90 lg:shadow-sky-900/5'
+                    : 'lg:bg-slate-950/40 lg:border-white/15'
+                }`}
               >
                 {mainGridLinks.map((link) => (
                   <AppIconCard
@@ -981,6 +1285,7 @@ export function App() {
                     link={link}
                     shape={settings.icon_shape}
                     isEditMode={isEditMode}
+                    isLightTheme={isLightTheme}
                     onEdit={openEditLinkModal}
                     onDelete={handleDeleteLink}
                     onToggleDock={handleToggleDock}
@@ -995,10 +1300,22 @@ export function App() {
                     className="flex flex-col items-center justify-start group cursor-pointer"
                     title="เพิ่มลิงก์ Google Apps Script หรือเว็บใหม่"
                   >
-                    <div className="w-[62px] h-[62px] sm:w-[68px] sm:h-[68px] rounded-[18px] sm:rounded-[20px] border-2 border-dashed border-white/30 group-hover:border-indigo-300 bg-white/8 group-hover:bg-indigo-500/25 flex items-center justify-center text-white/75 group-hover:text-white transition-all duration-200 group-hover:scale-105 shadow-md">
+                    <div
+                      className={`w-[62px] h-[62px] sm:w-[68px] sm:h-[68px] rounded-[18px] sm:rounded-[20px] border-2 border-dashed flex items-center justify-center transition-all duration-200 group-hover:scale-105 shadow-md ${
+                        isLightTheme
+                          ? 'border-sky-400/70 group-hover:border-sky-600 bg-white/80 group-hover:bg-sky-50 text-sky-600'
+                          : 'border-white/30 group-hover:border-indigo-300 bg-white/8 group-hover:bg-indigo-500/25 text-white/75 group-hover:text-white'
+                      }`}
+                    >
                       <Plus size={28} />
                     </div>
-                    <span className="mt-1.5 text-[12px] sm:text-[13px] font-medium text-white/80 group-hover:text-white">
+                    <span
+                      className={`mt-1.5 text-[12px] sm:text-[13px] font-medium ${
+                        isLightTheme
+                          ? 'text-slate-700 group-hover:text-sky-800'
+                          : 'text-white/80 group-hover:text-white'
+                      }`}
+                    >
                       เพิ่มลิงก์ใหม่
                     </span>
                   </button>
@@ -1011,6 +1328,7 @@ export function App() {
               dockLinks={dockLinks}
               shape={settings.icon_shape}
               isEditMode={isEditMode}
+              isLightTheme={isLightTheme}
               onEdit={openEditLinkModal}
               onDelete={handleDeleteLink}
               onToggleDock={handleToggleDock}

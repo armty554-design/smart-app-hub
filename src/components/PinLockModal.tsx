@@ -120,7 +120,13 @@ export const PinLockModal: React.FC<PinLockModalProps> = ({
         ) : (
           <p className="text-[11px] text-slate-400 mb-4 flex items-center justify-center gap-1">
             <ShieldCheck size={13} className="text-emerald-400" />
-            ค่าเริ่มต้นคือ <code className="text-indigo-300 font-mono">1234</code> (เปลี่ยนได้ในตั้งค่า)
+            {expectedPin === '1234' ? (
+              <>
+                ค่าเริ่มต้นคือ <code className="text-indigo-300 font-mono">1234</code> (เปลี่ยนได้ในตั้งค่า)
+              </>
+            ) : (
+              <span>กรอกรหัสผ่านแอดมิน {expectedPin.length} หลักที่ตั้งค่าไว้</span>
+            )}
           </p>
         )}
 

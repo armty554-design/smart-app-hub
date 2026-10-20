@@ -1,5 +1,5 @@
-import React, { useState, useRef } from 'react';
-import { AppLink, AppSettings, Category, FolderLayout, IconShape } from '../types/app';
+import React, { useState, useEffect, useRef } from 'react';
+import { AppLink, AppSettings, Category, FolderLayout, IconShape, WallpaperPreset } from '../types/app';
 import { WALLPAPER_PRESETS } from '../constants/wallpapers';
 import {
   X,
@@ -13,6 +13,11 @@ import {
   Image as ImageIcon,
   Layers,
   CheckCircle2,
+  Sun,
+  Moon,
+  Sparkles,
+  Loader2,
+  AlertCircle,
 } from 'lucide-react';
 
 interface SettingsModalProps {
@@ -40,7 +45,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'appearance' | 'categories' | 'backup'>('appearance');
 
-  // Appearance & PIN State
+  // Appearance & PIN State (ซิงค์ค่าล่าสุดจาก settings เสมอเมื่อเปิด Modal หรือเมื่อข้อมูลจาก Supabase โหลดเสร็จ)
   const [hubTitle, setHubTitle] = useState(settings.hub_title);
   const [hubSubtitle, setHubSubtitle] = useState(settings.hub_subtitle);
   const [adminPin, setAdminPin] = useState(settings.admin_pin);
@@ -54,26 +59,84 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [newCatColor, setNewCatColor] = useState('#6366f1');
   const [newCatLayout, setNewCatLayout] = useState<FolderLayout>('detail-2col');
 
+  const [isSaving, setIsSaving] = useState(false);
   const [saveBanner, setSaveBanner] = useState('');
+  const [errorBanner, setErrorBanner] = useState('');
   const importFileRef = useRef<HTMLInputElement | null>(null);
+
+  // ซิงค์ค่าจาก props.settings เข้าสู่ฟอร์มทุกครั้งที่เปิดหน้าต่างตั้งค่า หรือเมื่อค่าจาก Supabase เปลี่ยนแปลง
+  useEffect(() => {
+    if (!isOpen) return;
+    setHubTitle(settings.hub_title || 'Smart App Hub');
+    setHubSubtitle(settings.hub_subtitle || '');
+    setAdminPin(settings.admin_pin || '1234');
+    setWallpaperId(settings.wallpaper_id || 'aurora-night');
+    setCustomWallpaperUrl(settings.custom_wallpaper_url || '');
+    setIconShape(settings.icon_shape || 'squircle');
+    setGridColumns(settings.grid_columns || 4);
+    setErrorBanner('');
+  }, [isOpen, settings]);
 
   if (!isOpen) return null;
 
+  const lightPresets = WALLPAPER_PRESETS.filter((w) => w.isLight);
+  const darkPresets = WALLPAPER_PRESETS.filter((w) => !w.isLight);
+
+  const buildUpdatedSettings = (overrides?: Partial<AppSettings>): AppSettings => {
+    const cleanPin = (overrides?.admin_pin ?? adminPin).replace(/\D/g, '');
+    return {
+      ...settings,
+      hub_title: (overrides?.hub_title ?? hubTitle).trim() || 'Smart App Hub',
+      hub_subtitle: (overrides?.hub_subtitle ?? hubSubtitle).trim(),
+      admin_pin: cleanPin.length >= 4 ? cleanPin : settings.admin_pin || '1234',
+      wallpaper_id: overrides?.wallpaper_id ?? wallpaperId,
+      custom_wallpaper_url: (overrides?.custom_wallpaper_url ?? customWallpaperUrl).trim(),
+      icon_shape: overrides?.icon_shape ?? iconShape,
+      grid_columns: overrides?.grid_columns ?? gridColumns,
+    };
+  };
+
+  // เมื่อคลิกเลือกธีมพื้นหลัง ให้บันทึกและเปลี่ยนธีมทันทีในคลิกเดียว (ไม่ต้องกลัวลืมกดปุ่มบันทึกด้านล่าง)
+  const handleSelectWallpaperInstant = async (wp: WallpaperPreset) => {
+    setWallpaperId(wp.id);
+    setCustomWallpaperUrl('');
+    setErrorBanner('');
+    setIsSaving(true);
+    try {
+      const next = buildUpdatedSettings({
+        wallpaper_id: wp.id,
+        custom_wallpaper_url: '',
+      });
+      await onSaveSettings(next);
+      setSaveBanner(`เปลี่ยนเป็นธีม "${wp.name}" และบันทึกซิงค์ขึ้น Cloud เรียบร้อยแล้ว!`);
+      setTimeout(() => setSaveBanner(''), 3500);
+    } catch (err) {
+      setErrorBanner(err instanceof Error ? err.message : 'ไม่สามารถบันทึกธีมได้');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handleSaveGeneral = async (e: React.FormEvent) => {
     e.preventDefault();
-    const cleanPin = adminPin.replace(/\D/g, '') || '1234';
-    await onSaveSettings({
-      ...settings,
-      hub_title: hubTitle.trim() || 'Smart App Hub',
-      hub_subtitle: hubSubtitle.trim(),
-      admin_pin: cleanPin.length >= 4 ? cleanPin : '1234',
-      wallpaper_id: wallpaperId,
-      custom_wallpaper_url: customWallpaperUrl.trim(),
-      icon_shape: iconShape,
-      grid_columns: gridColumns,
-    });
-    setSaveBanner('บันทึกการตั้งค่าหน้าจอและรหัส PIN เรียบร้อยแล้ว');
-    setTimeout(() => setSaveBanner(''), 3000);
+    const cleanPin = adminPin.replace(/\D/g, '');
+    if (cleanPin.length < 4 || cleanPin.length > 6) {
+      setErrorBanner('รหัส PIN ต้องเป็นตัวเลข 4 ถึง 6 หลักเท่านั้น (เช่น 1234 หรือ 248900)');
+      return;
+    }
+
+    setErrorBanner('');
+    setIsSaving(true);
+    try {
+      const next = buildUpdatedSettings({ admin_pin: cleanPin });
+      await onSaveSettings(next);
+      setSaveBanner(`บันทึกการตั้งค่าและรหัส PIN (${cleanPin}) ขึ้นฐานข้อมูลเรียบร้อยแล้ว!`);
+      setTimeout(() => setSaveBanner(''), 3500);
+    } catch (err) {
+      setErrorBanner(err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการบันทึกการตั้งค่า');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleCreateCategory = async (e: React.FormEvent) => {
@@ -145,7 +208,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 ตั้งค่าระบบหลังบ้าน (Admin Settings)
               </h2>
               <p className="text-xs text-slate-400">
-                ปรับแต่งหน้าจอโฮม, หมวดหมู่, รหัส PIN และสำรองข้อมูล JSON
+                ปรับแต่งธีมสว่าง/ธีมมืด, รหัส PIN, หมวดหมู่ และสำรองข้อมูล JSON
               </p>
             </div>
           </div>
@@ -162,7 +225,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         {/* Navigation Tabs */}
         <div className="flex items-center gap-1.5 px-6 pt-3 border-b border-white/10 bg-slate-950/50 overflow-x-auto no-scrollbar">
           {[
-            { id: 'appearance', label: 'หน้าจอ & รหัส PIN', icon: ImageIcon },
+            { id: 'appearance', label: 'ธีมหน้าจอ & รหัส PIN', icon: ImageIcon },
             { id: 'categories', label: 'หมวดหมู่ / โฟลเดอร์', icon: Layers },
             { id: 'backup', label: 'สำรองข้อมูล (Export / Import JSON)', icon: Download },
           ].map((tab) => {
@@ -189,115 +252,190 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         {/* Body */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           {saveBanner && (
-            <div className="p-3.5 rounded-2xl bg-emerald-500/15 border border-emerald-400/30 text-xs text-emerald-300 flex items-center gap-2 font-medium">
-              <CheckCircle2 size={16} />
-              {saveBanner}
+            <div className="p-3.5 rounded-2xl bg-emerald-500/15 border border-emerald-400/30 text-xs text-emerald-300 flex items-center gap-2 font-medium animate-fade-in">
+              <CheckCircle2 size={16} className="shrink-0" />
+              <span>{saveBanner}</span>
+            </div>
+          )}
+
+          {errorBanner && (
+            <div className="p-3.5 rounded-2xl bg-rose-500/15 border border-rose-400/30 text-xs text-rose-300 flex items-center gap-2 font-medium animate-fade-in">
+              <AlertCircle size={16} className="shrink-0" />
+              <span>{errorBanner}</span>
             </div>
           )}
 
           {/* TAB 1: หน้าจอ & รหัส PIN */}
           {activeTab === 'appearance' && (
             <form onSubmit={handleSaveGeneral} className="space-y-6">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                    หัวข้อหน้าจอหลัก (Hub Title)
-                  </label>
-                  <input
-                    type="text"
-                    value={hubTitle}
-                    onChange={(e) => setHubTitle(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-white/15 text-sm text-white focus:outline-none focus:border-indigo-400"
-                  />
+              {/* กล่องตั้งค่ารหัส PIN และชื่อระบบ */}
+              <div className="p-4 rounded-2xl bg-slate-950/70 border border-white/10 space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                      หัวข้อหน้าจอหลัก (Hub Title)
+                    </label>
+                    <input
+                      type="text"
+                      value={hubTitle}
+                      onChange={(e) => setHubTitle(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-white/15 text-sm text-white focus:outline-none focus:border-indigo-400"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                      คำอธิบายใต้หัวข้อ
+                    </label>
+                    <input
+                      type="text"
+                      value={hubSubtitle}
+                      onChange={(e) => setHubSubtitle(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-white/15 text-sm text-white focus:outline-none focus:border-indigo-400"
+                    />
+                  </div>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                    คำอธิบายใต้หัวข้อ
-                  </label>
-                  <input
-                    type="text"
-                    value={hubSubtitle}
-                    onChange={(e) => setHubSubtitle(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-white/15 text-sm text-white focus:outline-none focus:border-indigo-400"
-                  />
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
+                  <div>
+                    <label className="block text-xs font-medium text-amber-300 mb-1.5 flex items-center gap-1.5">
+                      <Lock size={13} className="text-amber-400" />
+                      รหัส PIN แอดมิน (4-6 หลัก)
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={6}
+                      value={adminPin}
+                      onChange={(e) => setAdminPin(e.target.value.replace(/\D/g, ''))}
+                      placeholder="1234"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-amber-400/40 text-sm text-amber-200 font-mono font-bold tracking-widest focus:outline-none focus:border-amber-400"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                      รูปทรงไอคอนแอป (Icon Shape)
+                    </label>
+                    <select
+                      value={iconShape}
+                      onChange={(e) => setIconShape(e.target.value as IconShape)}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-white/15 text-sm text-white focus:outline-none focus:border-indigo-400"
+                    >
+                      <option value="squircle">Squircle (สไตล์ iOS / iPhone)</option>
+                      <option value="rounded">Rounded Square (สี่เหลี่ยมขอบมน)</option>
+                      <option value="circle">Circle (วงกลมสไตล์ Android Pixel)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                      จำนวนคอลัมน์บนหน้าจอคอมฯ
+                    </label>
+                    <select
+                      value={gridColumns}
+                      onChange={(e) => setGridColumns(Number(e.target.value))}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-white/15 text-sm text-white focus:outline-none focus:border-indigo-400"
+                    >
+                      <option value={4}>4 คอลัมน์ (เหมือนหน้าจอมือถือ)</option>
+                      <option value={5}>5 คอลัมน์ (เหมือน iPad / แท็บเล็ต)</option>
+                      <option value={6}>6 คอลัมน์ (จอกว้างจุได้เยอะ)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-2 border-t border-white/10">
+                  <span className="text-[11px] text-slate-400">
+                    รหัส PIN ปัจจุบันที่บันทึกอยู่: <strong className="text-emerald-300 font-mono">{settings.admin_pin}</strong>
+                  </span>
+                  <button
+                    type="submit"
+                    disabled={isSaving}
+                    className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-xs font-semibold text-white flex items-center gap-1.5 shadow-lg shadow-indigo-600/30 transition"
+                  >
+                    {isSaving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                    บันทึกชื่อระบบ & รหัส PIN
+                  </button>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5 flex items-center gap-1.5">
-                    <Lock size={13} className="text-amber-400" />
-                    รหัส PIN เข้าโหมด Admin (ตัวเลข 4-6 หลัก)
+              {/* ☀️ หมวดที่ 1: ธีมโทนสว่าง (Light Themes - ฟ้า-ขาว & พาสเทล) */}
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center gap-2 text-xs sm:text-sm font-semibold text-sky-300">
+                    <Sun size={16} className="text-amber-400" />
+                    <span>ธีมโทนสว่าง (Light Themes — ฟ้า-ขาว สว่างสะอาดตา คลิกเลือกเปลี่ยนได้ทันที)</span>
                   </label>
-                  <input
-                    type="text"
-                    maxLength={6}
-                    value={adminPin}
-                    onChange={(e) => setAdminPin(e.target.value.replace(/\D/g, ''))}
-                    placeholder="1234"
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-white/15 text-sm text-white font-mono tracking-widest focus:outline-none focus:border-indigo-400"
-                  />
+                  <span className="text-[11px] text-slate-400">คลิกปุ๊บเปลี่ยนปั๊บ</span>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                    รูปทรงไอคอนแอป (Icon Shape)
-                  </label>
-                  <select
-                    value={iconShape}
-                    onChange={(e) => setIconShape(e.target.value as IconShape)}
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-white/15 text-sm text-white focus:outline-none focus:border-indigo-400"
-                  >
-                    <option value="squircle">Squircle (สไตล์ iOS / iPhone)</option>
-                    <option value="rounded">Rounded Square (สี่เหลี่ยมขอบมน)</option>
-                    <option value="circle">Circle (วงกลมสไตล์ Android Pixel)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                    จำนวนคอลัมน์บนหน้าจอคอมฯ
-                  </label>
-                  <select
-                    value={gridColumns}
-                    onChange={(e) => setGridColumns(Number(e.target.value))}
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-white/15 text-sm text-white focus:outline-none focus:border-indigo-400"
-                  >
-                    <option value={4}>4 คอลัมน์ (เหมือนหน้าจอมือถือ)</option>
-                    <option value={5}>5 คอลัมน์ (เหมือน iPad / แท็บเล็ต)</option>
-                    <option value={6}>6 คอลัมน์ (จอกว้างจุได้เยอะ)</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* เลือก Wallpaper */}
-              <div>
-                <label className="block text-xs font-medium text-slate-300 mb-2.5">
-                  ภาพพื้นหลังหน้าจอ (Wallpaper Presets)
-                </label>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {WALLPAPER_PRESETS.map((wp) => {
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {lightPresets.map((wp) => {
                     const selected = wallpaperId === wp.id && !customWallpaperUrl;
                     return (
                       <button
                         key={wp.id}
                         type="button"
-                        onClick={() => {
-                          setWallpaperId(wp.id);
-                          setCustomWallpaperUrl('');
-                        }}
-                        className={`p-2 rounded-2xl border text-left transition ${
+                        onClick={() => handleSelectWallpaperInstant(wp)}
+                        className={`group relative p-2.5 rounded-2xl border text-left transition-all ${
                           selected
-                            ? 'border-indigo-400 bg-indigo-500/15 ring-2 ring-indigo-400/40'
+                            ? 'border-sky-400 bg-sky-500/15 ring-2 ring-sky-400/40 shadow-lg'
+                            : 'border-white/10 bg-slate-950/60 hover:border-sky-400/50 hover:bg-slate-900'
+                        }`}
+                      >
+                        <div
+                          className="relative h-16 w-full rounded-xl mb-2 border border-slate-300/60 shadow-inner flex items-end justify-between p-2"
+                          style={{ background: wp.thumbnail }}
+                        >
+                          {wp.badge && (
+                            <span className="px-2 py-0.5 rounded-full bg-sky-600 text-white text-[10px] font-bold shadow flex items-center gap-1">
+                              <Sparkles size={10} /> {wp.badge}
+                            </span>
+                          )}
+                          <span className="px-2 py-0.5 rounded-md bg-white/85 text-slate-800 text-[10px] font-semibold shadow-sm ml-auto">
+                            โทนสว่าง
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between px-1 gap-1">
+                          <span className="text-xs font-medium text-white truncate">{wp.name}</span>
+                          {selected && <Check size={15} className="text-sky-400 shrink-0" />}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 🌙 หมวดที่ 2: ธีมโทนมืด (Dark Themes) */}
+              <div className="space-y-2.5">
+                <label className="flex items-center gap-2 text-xs sm:text-sm font-semibold text-indigo-300">
+                  <Moon size={15} className="text-indigo-400" />
+                  <span>ธีมโทนมืด (Dark Themes — เข้มขรึม สบายตาตอนกลางคืน)</span>
+                </label>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {darkPresets.map((wp) => {
+                    const selected = wallpaperId === wp.id && !customWallpaperUrl;
+                    return (
+                      <button
+                        key={wp.id}
+                        type="button"
+                        onClick={() => handleSelectWallpaperInstant(wp)}
+                        className={`p-2.5 rounded-2xl border text-left transition-all ${
+                          selected
+                            ? 'border-indigo-400 bg-indigo-500/15 ring-2 ring-indigo-400/40 shadow-lg'
                             : 'border-white/10 bg-slate-950/60 hover:border-white/25'
                         }`}
                       >
                         <div
-                          className="h-14 w-full rounded-xl mb-2 border border-white/10"
+                          className="h-14 w-full rounded-xl mb-2 border border-white/10 flex items-end justify-end p-2"
                           style={{ background: wp.thumbnail }}
-                        />
-                        <div className="flex items-center justify-between px-1">
+                        >
+                          <span className="px-2 py-0.5 rounded-md bg-slate-950/75 text-slate-200 text-[10px] font-medium">
+                            โทนมืด
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between px-1 gap-1">
                           <span className="text-xs font-medium text-white truncate">{wp.name}</span>
                           {selected && <Check size={14} className="text-indigo-400 shrink-0" />}
                         </div>
@@ -311,21 +449,34 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <label className="block text-xs font-medium text-slate-300 mb-1.5">
                   หรือใช้ลิงก์รูปภาพพื้นหลังกำหนดเอง (Custom Wallpaper Image URL)
                 </label>
-                <input
-                  type="text"
-                  value={customWallpaperUrl}
-                  onChange={(e) => setCustomWallpaperUrl(e.target.value)}
-                  placeholder="https://images.unsplash.com/..."
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-white/15 text-xs text-white font-mono focus:outline-none focus:border-indigo-400"
-                />
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={customWallpaperUrl}
+                    onChange={(e) => setCustomWallpaperUrl(e.target.value)}
+                    placeholder="https://images.unsplash.com/..."
+                    className="flex-1 px-3.5 py-2.5 rounded-xl bg-slate-950 border border-white/15 text-xs text-white font-mono focus:outline-none focus:border-indigo-400"
+                  />
+                  {customWallpaperUrl && (
+                    <button
+                      type="button"
+                      onClick={() => setCustomWallpaperUrl('')}
+                      className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-xs text-slate-300"
+                    >
+                      ล้างรูป
+                    </button>
+                  )}
+                </div>
               </div>
 
-              <div className="flex justify-end pt-2">
+              <div className="flex justify-end pt-2 border-t border-white/10">
                 <button
                   type="submit"
-                  className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs sm:text-sm font-semibold text-white shadow-lg shadow-indigo-600/30 transition"
+                  disabled={isSaving}
+                  className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-xs sm:text-sm font-semibold text-white flex items-center gap-2 shadow-lg shadow-indigo-600/30 transition"
                 >
-                  บันทึกการตั้งค่าหน้าจอ
+                  {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
+                  บันทึกการตั้งค่าทั้งหมด
                 </button>
               </div>
             </form>
