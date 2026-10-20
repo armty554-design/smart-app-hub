@@ -104,9 +104,16 @@ export function App() {
     if (silent && isMutationInProgressOrRecent()) {
       return;
     }
-    setLinks(bundle.links);
-    setCategories(bundle.categories);
-    setSettings(bundle.settings);
+    // อัปเดต State เฉพาะเมื่อข้อมูลมีการเปลี่ยนแปลงจริงๆ เท่านั้น เพื่อไม่ให้หน้าจอกระพริบ (Zero-Flicker Silent Sync)
+    setLinks((prev) =>
+      JSON.stringify(prev) === JSON.stringify(bundle.links) ? prev : bundle.links
+    );
+    setCategories((prev) =>
+      JSON.stringify(prev) === JSON.stringify(bundle.categories) ? prev : bundle.categories
+    );
+    setSettings((prev) =>
+      JSON.stringify(prev) === JSON.stringify(bundle.settings) ? prev : bundle.settings
+    );
     setDataSource(bundle.source);
     setSupabaseError(bundle.supabaseError);
     if (!silent) setIsLoading(false);
@@ -115,7 +122,7 @@ export function App() {
   useEffect(() => {
     loadHubData(false);
 
-    // ซิงค์ข้อมูลอัตโนมัติเฉพาะเมื่อสลับแท็บกลับมา (ไม่ใช้ window.focus เพราะจะชนกับหน้าต่าง confirm ตอนกดลบ)
+    // 1. ซิงค์ข้อมูลแบบเงียบอัตโนมัติเมื่อสลับแท็บหรือสลับแอปมือถือกลับมา
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible' && !isMutationInProgressOrRecent()) {
         loadHubData(true);
@@ -123,7 +130,15 @@ export function App() {
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
-    // เชื่อมต่อ Supabase Realtime เพื่อซิงค์เมื่อเครื่องอื่นมีการแก้ไข
+    // 2. รีเฟรชอัตโนมัติแบบเงียบๆ (Silent Background Polling) ทุกๆ 6 วินาที
+    // ช่วยให้เปิดจอมือถือคู่กับจอคอมฯ แล้วเห็นข้อมูลอัปเดตตรงกันเองโดยไม่ต้องกดรีเฟรชมือ และหน้าจอไม่กระพริบ
+    const silentPollTimer = setInterval(() => {
+      if (document.visibilityState === 'visible' && !isMutationInProgressOrRecent()) {
+        loadHubData(true);
+      }
+    }, 6000);
+
+    // 3. เชื่อมต่อ Supabase Realtime เพื่อซิงค์ทันทีเมื่อมีการเปลี่ยนแปลง
     const supabase = getSupabaseClient();
     const channel = supabase
       ? supabase
@@ -141,6 +156,7 @@ export function App() {
       : null;
 
     return () => {
+      clearInterval(silentPollTimer);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       if (supabase && channel) {
         supabase.removeChannel(channel);
