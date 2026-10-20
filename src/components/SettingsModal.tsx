@@ -2,43 +2,28 @@ import React, { useState, useRef } from 'react';
 import { AppLink, AppSettings, Category, FolderLayout, IconShape } from '../types/app';
 import { WALLPAPER_PRESETS } from '../constants/wallpapers';
 import {
-  getSupabaseCredentials,
-  saveSupabaseCredentials,
-  isSupabaseConfigured,
-} from '../lib/supabase';
-import { pushLocalDataToSupabase } from '../services/linkService';
-import {
   X,
   Settings,
-  Database,
   FolderPlus,
   Trash2,
   Check,
-  Copy,
   Download,
   Upload,
-  CloudUpload,
   Lock,
   Image as ImageIcon,
   Layers,
-  Loader2,
-  AlertCircle,
   CheckCircle2,
 } from 'lucide-react';
-import rawSqlSchema from '../../supabase/schema.sql?raw';
 
 interface SettingsModalProps {
   isOpen: boolean;
   settings: AppSettings;
   categories: Category[];
   links: AppLink[];
-  dataSource: 'supabase' | 'local';
-  supabaseError?: string;
   onSaveSettings: (newSettings: AppSettings) => Promise<void>;
   onAddCategory: (category: Category) => Promise<void>;
   onDeleteCategory: (categoryId: string) => Promise<void>;
   onImportBundle: (data: { links: AppLink[]; categories: Category[]; settings: AppSettings }) => Promise<void>;
-  onReloadFromSupabase: () => Promise<void>;
   onClose: () => void;
 }
 
@@ -47,16 +32,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   settings,
   categories,
   links,
-  dataSource,
-  supabaseError,
   onSaveSettings,
   onAddCategory,
   onDeleteCategory,
   onImportBundle,
-  onReloadFromSupabase,
   onClose,
 }) => {
-  const [activeTab, setActiveTab] = useState<'appearance' | 'categories' | 'supabase' | 'backup'>('appearance');
+  const [activeTab, setActiveTab] = useState<'appearance' | 'categories' | 'backup'>('appearance');
 
   // Appearance & PIN State
   const [hubTitle, setHubTitle] = useState(settings.hub_title);
@@ -72,17 +54,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [newCatColor, setNewCatColor] = useState('#6366f1');
   const [newCatLayout, setNewCatLayout] = useState<FolderLayout>('detail-2col');
 
-  // Supabase Connection State
-  const initialCreds = getSupabaseCredentials();
-  const [supaUrl, setSupaUrl] = useState(initialCreds.url);
-  const [supaKey, setSupaKey] = useState(initialCreds.anonKey);
-  const [copiedSql, setCopiedSql] = useState(false);
-  const [syncStatus, setSyncStatus] = useState<{ type: 'idle' | 'loading' | 'success' | 'error'; message: string }>({
-    type: 'idle',
-    message: '',
-  });
   const [saveBanner, setSaveBanner] = useState('');
-
   const importFileRef = useRef<HTMLInputElement | null>(null);
 
   if (!isOpen) return null;
@@ -117,41 +89,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     };
     await onAddCategory(cat);
     setNewCatName('');
-  };
-
-  const handleSaveSupabaseCreds = async () => {
-    setSyncStatus({ type: 'loading', message: 'กำลังทดสอบการเชื่อมต่อกับ Supabase...' });
-    saveSupabaseCredentials({ url: supaUrl, anonKey: supaKey });
-    await onReloadFromSupabase();
-    if (isSupabaseConfigured()) {
-      setSyncStatus({
-        type: 'success',
-        message: 'บันทึกค่าเชื่อมต่อและซิงค์ข้อมูลกับ Supabase เรียบร้อยแล้ว!',
-      });
-    } else {
-      setSyncStatus({
-        type: 'idle',
-        message: 'ล้างค่าเชื่อมต่อแล้ว (ขณะนี้ทำงานในโหมด Local Storage)',
-      });
-    }
-  };
-
-  const handlePushToSupabase = async () => {
-    setSyncStatus({ type: 'loading', message: 'กำลังส่งข้อมูลทั้งหมดขึ้นตารางใน Supabase...' });
-    saveSupabaseCredentials({ url: supaUrl, anonKey: supaKey });
-    const res = await pushLocalDataToSupabase();
-    if (res.ok) {
-      await onReloadFromSupabase();
-      setSyncStatus({ type: 'success', message: res.message });
-    } else {
-      setSyncStatus({ type: 'error', message: res.message });
-    }
-  };
-
-  const handleCopySql = () => {
-    navigator.clipboard.writeText(rawSqlSchema);
-    setCopiedSql(true);
-    setTimeout(() => setCopiedSql(false), 2500);
   };
 
   const handleExportJson = () => {
@@ -208,7 +145,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 ตั้งค่าระบบหลังบ้าน (Admin Settings)
               </h2>
               <p className="text-xs text-slate-400">
-                ปรับแต่งหน้าจอโฮม, หมวดหมู่, รหัส PIN และฐานข้อมูล Supabase
+                ปรับแต่งหน้าจอโฮม, หมวดหมู่, รหัส PIN และสำรองข้อมูล JSON
               </p>
             </div>
           </div>
@@ -227,8 +164,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {[
             { id: 'appearance', label: 'หน้าจอ & รหัส PIN', icon: ImageIcon },
             { id: 'categories', label: 'หมวดหมู่ / โฟลเดอร์', icon: Layers },
-            { id: 'supabase', label: 'เชื่อมต่อ Supabase & Vercel', icon: Database },
-            { id: 'backup', label: 'สำรองข้อมูล (JSON)', icon: Download },
+            { id: 'backup', label: 'สำรองข้อมูล (Export / Import JSON)', icon: Download },
           ].map((tab) => {
             const IconComp = tab.icon;
             const active = activeTab === tab.id;
@@ -504,141 +440,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
           )}
 
-          {/* TAB 3: เชื่อมต่อ Supabase & Vercel */}
-          {activeTab === 'supabase' && (
-            <div className="space-y-5">
-              {/* สถานะปัจจุบัน */}
-              <div
-                className={`p-4 rounded-2xl border flex items-start gap-3 ${
-                  dataSource === 'supabase'
-                    ? 'bg-emerald-500/10 border-emerald-400/30 text-emerald-200'
-                    : 'bg-amber-500/10 border-amber-400/30 text-amber-200'
-                }`}
-              >
-                {dataSource === 'supabase' ? (
-                  <CheckCircle2 size={20} className="text-emerald-400 shrink-0 mt-0.5" />
-                ) : (
-                  <AlertCircle size={20} className="text-amber-400 shrink-0 mt-0.5" />
-                )}
-                <div className="text-xs space-y-1">
-                  <p className="font-semibold text-sm">
-                    สถานะปัจจุบัน:{' '}
-                    {dataSource === 'supabase'
-                      ? 'เชื่อมต่อฐานข้อมูล Supabase Cloud เรียบร้อยแล้ว'
-                      : 'กำลังใช้งานโหมดความจำเครื่อง (Local Fallback)'}
-                  </p>
-                  {supabaseError && (
-                    <p className="text-rose-300">
-                      หมายเหตุจาก Supabase: {supabaseError} (กรุณารันคำสั่ง SQL ด้านล่างใน Supabase SQL Editor)
-                    </p>
-                  )}
-                  <p className="text-slate-300">
-                    เมื่อ Deploy บน <strong>Vercel</strong> คุณสามารถตั้งค่า Environment Variables ชื่อ{' '}
-                    <code className="text-indigo-300">VITE_SUPABASE_URL</code> และ{' '}
-                    <code className="text-indigo-300">VITE_SUPABASE_ANON_KEY</code> หรือกรอกด้านล่างเพื่อทดสอบได้ทันที
-                  </p>
-                </div>
-              </div>
-
-              {/* ฟอร์มใส่ Supabase URL & Key */}
-              <div className="p-4 rounded-2xl bg-slate-950/80 border border-white/10 space-y-4">
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                    Supabase Project URL
-                  </label>
-                  <input
-                    type="text"
-                    value={supaUrl}
-                    onChange={(e) => setSupaUrl(e.target.value)}
-                    placeholder="https://xxxxxxxxxxxx.supabase.co"
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-white/15 text-xs text-white font-mono focus:outline-none focus:border-indigo-400"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                    Supabase Anon Public Key
-                  </label>
-                  <input
-                    type="password"
-                    value={supaKey}
-                    onChange={(e) => setSupaKey(e.target.value)}
-                    placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-white/15 text-xs text-white font-mono focus:outline-none focus:border-indigo-400"
-                  />
-                </div>
-
-                <div className="flex flex-wrap items-center gap-3 pt-1">
-                  <button
-                    type="button"
-                    onClick={handleSaveSupabaseCreds}
-                    disabled={syncStatus.type === 'loading'}
-                    className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white flex items-center gap-2 transition"
-                  >
-                    {syncStatus.type === 'loading' ? (
-                      <Loader2 size={15} className="animate-spin" />
-                    ) : (
-                      <Database size={15} />
-                    )}
-                    บันทึกและเชื่อมต่อ Supabase
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handlePushToSupabase}
-                    disabled={syncStatus.type === 'loading'}
-                    className="px-4 py-2.5 rounded-xl bg-emerald-600/80 hover:bg-emerald-600 text-xs font-semibold text-white flex items-center gap-2 transition"
-                  >
-                    <CloudUpload size={15} />
-                    อัปโหลดข้อมูลชุดปัจจุบันขึ้น Supabase
-                  </button>
-                </div>
-
-                {syncStatus.message && (
-                  <p
-                    className={`text-xs font-medium ${
-                      syncStatus.type === 'error'
-                        ? 'text-rose-400'
-                        : syncStatus.type === 'success'
-                        ? 'text-emerald-400'
-                        : 'text-indigo-300'
-                    }`}
-                  >
-                    {syncStatus.message}
-                  </p>
-                )}
-              </div>
-
-              {/* กล่องคัดลอก SQL Schema */}
-              <div className="p-4 rounded-2xl bg-slate-950/80 border border-white/10 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h4 className="text-xs font-semibold text-white">
-                      คำสั่ง SQL สำหรับสร้างตารางและ Storage Bucket ใน Supabase
-                    </h4>
-                    <p className="text-[11px] text-slate-400">
-                      กดคัดลอกแล้วนำไปวางในเมนู SQL Editor ของโปรเจกต์ Supabase ของคุณเพียงครั้งเดียว
-                    </p>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={handleCopySql}
-                    className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-medium text-white flex items-center gap-1.5 transition"
-                  >
-                    {copiedSql ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
-                    {copiedSql ? 'คัดลอกแล้ว!' : 'คัดลอก SQL'}
-                  </button>
-                </div>
-
-                <pre className="p-3 rounded-xl bg-slate-900 border border-white/10 text-[11px] text-slate-300 font-mono max-h-40 overflow-y-auto">
-                  {rawSqlSchema}
-                </pre>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 4: สำรองข้อมูล Export / Import JSON */}
+          {/* TAB 3: สำรองข้อมูล Export / Import JSON */}
           {activeTab === 'backup' && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="p-5 rounded-2xl bg-slate-950/80 border border-white/10 flex flex-col justify-between space-y-4">
@@ -662,7 +464,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <div>
                   <h4 className="text-sm font-semibold text-white">นำเข้าข้อมูล (Import JSON)</h4>
                   <p className="text-xs text-slate-400 mt-1">
-                    กู้คืนรายการลิงก์และไอคอนจากไฟล์ `.json` ที่เคยสำรองไว้ (และซิงค์ขึ้น Supabase อัตโนมัติ)
+                    กู้คืนรายการลิงก์และไอคอนจากไฟล์ `.json` ที่เคยสำรองไว้
                   </p>
                 </div>
                 <input

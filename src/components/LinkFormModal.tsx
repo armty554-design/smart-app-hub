@@ -148,11 +148,7 @@ export const LinkFormModal: React.FC<LinkFormModalProps> = ({
       const result = await uploadIconImage(file);
       setIconUrl(result.url);
       setIconType('image');
-      setUploadNotice(
-        result.storageUsed === 'supabase'
-          ? 'อัปโหลดรูปขึ้น Supabase Storage สำเร็จ!'
-          : 'ย่อขนาดและบันทึกรูปไอคอนพร้อมใช้งานเรียบร้อยแล้ว!'
-      );
+      setUploadNotice('ย่อขนาดและบันทึกรูปไอคอนพร้อมใช้งานเรียบร้อยแล้ว!');
     } catch (err) {
       setFormError(err instanceof Error ? err.message : 'อัปโหลดรูปไม่สำเร็จ');
     } finally {
@@ -507,7 +503,7 @@ export const LinkFormModal: React.FC<LinkFormModalProps> = ({
                           <Upload size={22} className="text-indigo-400" />
                           <span className="text-xs font-medium">คลิกเพื่อเลือกรูปภาพจากเครื่อง</span>
                           <span className="text-[11px] text-slate-400">
-                            ย่อขนาดอัตโนมัติ + รองรับ Supabase Storage
+                            ระบบจะย่อขนาดรูปให้อัตโนมัติเพื่อความรวดเร็ว
                           </span>
                         </>
                       )}

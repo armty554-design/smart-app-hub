@@ -28,7 +28,6 @@ import {
   setLocalLinks,
   setLocalCategories,
   setLocalSettings,
-  pushLocalDataToSupabase,
 } from './services/linkService';
 import { AppIconCard } from './components/AppIconCard';
 import { DockBar } from './components/DockBar';
@@ -56,7 +55,6 @@ import {
   Sparkles,
   Wifi,
   Check,
-  Database,
   Monitor,
   Smartphone,
   Pin,
@@ -66,8 +64,6 @@ export function App() {
   const [links, setLinks] = useState<AppLink[]>([]);
   const [categories, setCategories] = useState<Category[]>(DEFAULT_CATEGORIES);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
-  const [dataSource, setDataSource] = useState<'supabase' | 'local'>('local');
-  const [supabaseError, setSupabaseError] = useState<string | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(true);
 
   // Navigation & View Mode
@@ -98,8 +94,6 @@ export function App() {
     setLinks(bundle.links);
     setCategories(bundle.categories);
     setSettings(bundle.settings);
-    setDataSource(bundle.source);
-    setSupabaseError(bundle.supabaseError);
     setIsLoading(false);
   }, []);
 
@@ -285,7 +279,6 @@ export function App() {
     setLinks(bundle.links);
     setCategories(bundle.categories);
     setSettings(bundle.settings);
-    await pushLocalDataToSupabase();
   };
 
   // คำนวณภาพพื้นหลัง Wallpaper
@@ -358,27 +351,6 @@ export function App() {
           <div className="flex items-center gap-2">
             {/* ปุ่มไอคอนสำหรับติดตั้งลงหน้าจอ Android / มือถือ */}
             <AndroidInstallPrompt hubTitle={settings.hub_title} />
-
-            {/* สถานะฐานข้อมูล (แสดงเฉพาะแอดมินที่ปลดล็อกโหมดแก้ไขแล้วเท่านั้น) */}
-            {isEditMode && (
-              <button
-                type="button"
-                onClick={() => setIsSettingsOpen(true)}
-                title={
-                  dataSource === 'supabase'
-                    ? 'เชื่อมต่อกับ Supabase Cloud แล้ว'
-                    : 'คลิกเพื่อตั้งค่าการเชื่อมต่อ Supabase'
-                }
-                className={`hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] border transition ${
-                  dataSource === 'supabase'
-                    ? 'bg-emerald-500/15 border-emerald-400/30 text-emerald-300'
-                    : 'bg-white/10 border-white/15 text-slate-300 hover:bg-white/15'
-                }`}
-              >
-                <Database size={11} />
-                {dataSource === 'supabase' ? 'Supabase Sync' : 'Local / ตั้งค่า Cloud'}
-              </button>
-            )}
 
             <Wifi size={14} className="text-white/80 hidden sm:block" />
 
@@ -1042,8 +1014,6 @@ export function App() {
         links={links}
         categories={categories}
         settings={settings}
-        dataSource={dataSource}
-        supabaseError={supabaseError}
         onClose={() => setIsAdminDashboardOpen(false)}
         onAddNewLink={(catId, isDock) => openAddLinkModal(catId || activeCategoryId, isDock || false)}
         onEditLink={(link) => openEditLinkModal(link)}
@@ -1053,7 +1023,6 @@ export function App() {
         onMoveLinkOrder={handleMoveLinkOrder}
         onUpsertCategory={handleAddCategory}
         onDeleteCategory={handleDeleteCategory}
-        onReloadFromSupabase={loadHubData}
         onOpenAppearanceSettings={() => setIsSettingsOpen(true)}
       />
 
@@ -1062,13 +1031,10 @@ export function App() {
         settings={settings}
         categories={categories}
         links={links}
-        dataSource={dataSource}
-        supabaseError={supabaseError}
         onSaveSettings={handleSaveSettings}
         onAddCategory={handleAddCategory}
         onDeleteCategory={handleDeleteCategory}
         onImportBundle={handleImportBundle}
-        onReloadFromSupabase={loadHubData}
         onClose={() => setIsSettingsOpen(false)}
       />
     </div>

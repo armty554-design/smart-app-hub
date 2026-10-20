@@ -43,11 +43,6 @@ export interface AppSettings {
   default_folder_layout?: FolderLayout;
 }
 
-export interface SupabaseCredentials {
-  url: string;
-  anonKey: string;
-}
-
 export interface WallpaperPreset {
   id: string;
   name: string;
