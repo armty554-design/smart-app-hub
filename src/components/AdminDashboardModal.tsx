@@ -2,6 +2,13 @@ import React, { useState } from 'react';
 import { AppLink, AppSettings, Category, FolderLayout, IconShape } from '../types/app';
 import { IconRenderer } from './IconRenderer';
 import {
+  getSupabaseCredentials,
+  saveSupabaseCredentials,
+  isSupabaseConfigured,
+} from '../lib/supabase';
+import { pushLocalDataToSupabase } from '../services/linkService';
+import rawSqlSchema from '../../supabase/schema.sql?raw';
+import {
   X,
   Plus,
   Search,
@@ -11,8 +18,16 @@ import {
   PinOff,
   Eye,
   EyeOff,
+  Copy,
   ExternalLink,
   FolderPlus,
+  Database,
+  Check,
+  CloudUpload,
+  RefreshCw,
+  Loader2,
+  AlertCircle,
+  CheckCircle2,
   LayoutDashboard,
   Layers,
   Settings,
@@ -26,6 +41,8 @@ interface AdminDashboardModalProps {
   links: AppLink[];
   categories: Category[];
   settings: AppSettings;
+  dataSource: 'supabase' | 'local';
+  supabaseError?: string;
   onClose: () => void;
   onAddNewLink: (defaultCategoryId?: string, defaultIsDock?: boolean) => void;
   onEditLink: (link: AppLink) => void;
@@ -35,6 +52,7 @@ interface AdminDashboardModalProps {
   onMoveLinkOrder: (link: AppLink, direction: 'up' | 'down') => Promise<void>;
   onUpsertCategory: (category: Category) => Promise<void>;
   onDeleteCategory: (categoryId: string) => Promise<void>;
+  onReloadFromSupabase: () => Promise<void>;
   onOpenAppearanceSettings: () => void;
 }
 
@@ -43,6 +61,8 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   links,
   categories,
   settings,
+  dataSource,
+  supabaseError,
   onClose,
   onAddNewLink,
   onEditLink,
@@ -52,9 +72,10 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   onMoveLinkOrder,
   onUpsertCategory,
   onDeleteCategory,
+  onReloadFromSupabase,
   onOpenAppearanceSettings,
 }) => {
-  const [activeTab, setActiveTab] = useState<'links' | 'categories'>('links');
+  const [activeTab, setActiveTab] = useState<'links' | 'categories' | 'supabase'>('links');
 
   // ตัวกรองตารางลิงก์
   const [searchQuery, setSearchQuery] = useState('');
@@ -65,6 +86,16 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   const [newCatName, setNewCatName] = useState('');
   const [newCatColor, setNewCatColor] = useState('#6366f1');
   const [newCatLayout, setNewCatLayout] = useState<FolderLayout>('detail-2col');
+
+  // ฟอร์มเชื่อมต่อ Supabase
+  const initialCreds = getSupabaseCredentials();
+  const [supaUrl, setSupaUrl] = useState(initialCreds.url);
+  const [supaKey, setSupaKey] = useState(initialCreds.anonKey);
+  const [copiedSql, setCopiedSql] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<{
+    type: 'idle' | 'loading' | 'success' | 'error';
+    text: string;
+  }>({ type: 'idle', text: '' });
 
   if (!isOpen) return null;
 
@@ -108,6 +139,44 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
     setNewCatName('');
   };
 
+  const handleCopySql = () => {
+    navigator.clipboard.writeText(rawSqlSchema);
+    setCopiedSql(true);
+    setTimeout(() => setCopiedSql(false), 2500);
+  };
+
+  const handleConnectSupabase = async () => {
+    setSyncMessage({ type: 'loading', text: 'กำลังบันทึกและดึงข้อมูลล่าสุดจาก Supabase...' });
+    saveSupabaseCredentials({ url: supaUrl, anonKey: supaKey });
+    await onReloadFromSupabase();
+    if (isSupabaseConfigured()) {
+      setSyncMessage({
+        type: 'success',
+        text: 'เชื่อมต่อและดึงข้อมูลจาก Supabase สำเร็จแล้ว!',
+      });
+    } else {
+      setSyncMessage({
+        type: 'idle',
+        text: 'ล้างค่าเชื่อมต่อแล้ว (ขณะนี้ทำงานในโหมดความจำเครื่อง Local)',
+      });
+    }
+  };
+
+  const handlePushAllToSupabase = async () => {
+    setSyncMessage({
+      type: 'loading',
+      text: 'กำลังส่งข้อมูลลิงก์ หมวดหมู่ และการตั้งค่าทั้งหมดขึ้น Supabase...',
+    });
+    saveSupabaseCredentials({ url: supaUrl, anonKey: supaKey });
+    const res = await pushLocalDataToSupabase();
+    if (res.ok) {
+      await onReloadFromSupabase();
+      setSyncMessage({ type: 'success', text: res.message });
+    } else {
+      setSyncMessage({ type: 'error', text: res.message });
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-950/85 backdrop-blur-xl overflow-y-auto">
       <div className="relative w-full max-w-6xl rounded-3xl bg-slate-900 border border-white/15 shadow-[0_25px_80px_rgba(0,0,0,0.85)] overflow-hidden my-auto h-[92vh] flex flex-col">
@@ -118,11 +187,26 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
               <LayoutDashboard size={20} />
             </div>
             <div>
-              <h2 className="text-base sm:text-lg font-bold text-white">
-                ระบบจัดการหลังบ้าน (Admin CMS Dashboard)
-              </h2>
+              <div className="flex items-center gap-2.5">
+                <h2 className="text-base sm:text-lg font-bold text-white">
+                  ระบบจัดการหลังบ้าน (Admin CMS Dashboard)
+                </h2>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('supabase')}
+                  className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold border transition cursor-pointer ${
+                    dataSource === 'supabase'
+                      ? 'bg-emerald-500/15 border-emerald-400/30 text-emerald-300'
+                      : 'bg-amber-500/15 border-amber-400/30 text-amber-300 hover:bg-amber-500/25'
+                  }`}
+                >
+                  {dataSource === 'supabase'
+                    ? '● ซิงค์กับ Supabase Cloud แล้ว'
+                    : '⚠️ โหมด Local (คลิกเพื่อตั้งค่าซิงค์ Supabase)'}
+                </button>
+              </div>
               <p className="text-xs text-slate-400">
-                จัดการทุกลิงก์ Google Apps Script, ปรับแต่งไอคอน และตั้งค่ารูปแบบโฟลเดอร์ 2 คอลัมน์
+                จัดการทุกลิงก์ Google Apps Script, ปรับแต่งไอคอน, ตั้งค่ารูปแบบโฟลเดอร์ 2 คอลัมน์ และซิงค์ฐานข้อมูล
               </p>
             </div>
           </div>
@@ -134,7 +218,7 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
               className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/15 border border-white/10 text-xs font-medium text-slate-200 flex items-center gap-1.5 transition"
             >
               <Settings size={14} />
-              ตั้งค่าหน้าจอ / PIN / Backup JSON
+              ตั้งค่าหน้าจอ / PIN / Backup
             </button>
 
             <button
@@ -184,6 +268,19 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
             >
               <Layers size={15} />
               จัดการหมวดหมู่ & รูปแบบโฟลเดอร์ ({categories.length})
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('supabase')}
+              className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold border-b-2 whitespace-nowrap transition ${
+                activeTab === 'supabase'
+                  ? 'border-emerald-400 text-emerald-300 bg-emerald-500/10 rounded-t-xl'
+                  : 'border-transparent text-slate-400 hover:text-white'
+              }`}
+            >
+              <Database size={15} />
+              เชื่อมต่อฐานข้อมูล Supabase (ซิงค์ทุกเครื่อง)
             </button>
           </div>
 
@@ -582,6 +679,152 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                     </div>
                   );
                 })}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 3: เชื่อมต่อฐานข้อมูล Supabase จริง (Step-by-step Wizard) */}
+          {activeTab === 'supabase' && (
+            <div className="space-y-5 max-w-4xl mx-auto">
+              <div
+                className={`p-4 rounded-2xl border flex items-start gap-3 ${
+                  dataSource === 'supabase'
+                    ? 'bg-emerald-500/10 border-emerald-400/30 text-emerald-200'
+                    : 'bg-indigo-500/10 border-indigo-400/30 text-indigo-100'
+                }`}
+              >
+                {dataSource === 'supabase' ? (
+                  <CheckCircle2 size={22} className="text-emerald-400 shrink-0 mt-0.5" />
+                ) : (
+                  <AlertCircle size={22} className="text-indigo-400 shrink-0 mt-0.5" />
+                )}
+                <div className="text-xs space-y-1">
+                  <p className="font-bold text-sm">
+                    {dataSource === 'supabase'
+                      ? 'เชื่อมต่อกับฐานข้อมูล Supabase จริงเรียบร้อยแล้ว! ข้อมูลจะซิงค์ตรงกันทุกเครื่อง'
+                      : 'ตั้งค่าเชื่อมต่อ Supabase เพื่อให้การเพิ่ม/ลบข้อมูลซิงค์กันทุกเครื่อง'}
+                  </p>
+                  {supabaseError && (
+                    <p className="text-rose-300 font-medium">
+                      ข้อความแจ้งเตือนจาก Supabase: {supabaseError} (กรุณาคัดลอกคำสั่ง SQL ในขั้นตอนที่ 1 ไปรันใน Supabase SQL Editor)
+                    </p>
+                  )}
+                  <p className="text-slate-300">
+                    สำหรับบน <strong>Vercel</strong>: คุณควรนำค่า <code className="text-indigo-300">VITE_SUPABASE_URL</code> และ{' '}
+                    <code className="text-indigo-300">VITE_SUPABASE_ANON_KEY</code> ไปใส่ในเมนู{' '}
+                    <strong>Settings -&gt; Environment Variables</strong> ของโปรเจกต์บน Vercel ด้วย เพื่อให้ทุกเครื่องที่เข้าเว็บซิงค์เข้าฐานข้อมูลเดียวกันอัตโนมัติ
+                  </p>
+                </div>
+              </div>
+
+              {/* ขั้นตอนที่ 1: คัดลอก SQL ไปรันใน Supabase */}
+              <div className="p-5 rounded-2xl bg-slate-950/80 border border-white/10 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <span className="px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 text-[11px] font-bold">
+                      ขั้นตอนที่ 1
+                    </span>
+                    <h4 className="text-sm font-semibold text-white mt-1">
+                      คัดลอกคำสั่ง SQL ไปรันใน Supabase SQL Editor (ทำครั้งเดียว)
+                    </h4>
+                    <p className="text-xs text-slate-400">
+                      สร้างตารางเก็บลิงก์ (`app_links`), หมวดหมู่ (`categories`), ตั้งค่า (`app_settings`) และ Storage (`app-icons`)
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleCopySql}
+                    className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white flex items-center gap-1.5 shadow transition"
+                  >
+                    {copiedSql ? <Check size={15} /> : <Copy size={15} />}
+                    {copiedSql ? 'คัดลอกคำสั่ง SQL แล้ว!' : 'คัดลอกคำสั่ง SQL ทั้งหมด'}
+                  </button>
+                </div>
+
+                <pre className="p-3.5 rounded-xl bg-slate-900 border border-white/10 text-[11px] text-slate-300 font-mono max-h-40 overflow-y-auto">
+                  {rawSqlSchema}
+                </pre>
+              </div>
+
+              {/* ขั้นตอนที่ 2: กรอก Project URL & Anon Key แล้วกดซิงค์ */}
+              <div className="p-5 rounded-2xl bg-slate-950/80 border border-white/10 space-y-4">
+                <div>
+                  <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[11px] font-bold">
+                    ขั้นตอนที่ 2
+                  </span>
+                  <h4 className="text-sm font-semibold text-white mt-1">
+                    ใส่ค่า Project URL และ Anon Key จากหน้าตั้งค่า API ของ Supabase
+                  </h4>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                      Supabase Project URL
+                    </label>
+                    <input
+                      type="text"
+                      value={supaUrl}
+                      onChange={(e) => setSupaUrl(e.target.value)}
+                      placeholder="https://xxxxxxxxxxxx.supabase.co"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-white/15 text-xs text-white font-mono focus:outline-none focus:border-indigo-400"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                      Supabase Anon Public Key
+                    </label>
+                    <input
+                      type="password"
+                      value={supaKey}
+                      onChange={(e) => setSupaKey(e.target.value)}
+                      placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-white/15 text-xs text-white font-mono focus:outline-none focus:border-indigo-400"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3 pt-1">
+                  <button
+                    type="button"
+                    onClick={handlePushAllToSupabase}
+                    disabled={syncMessage.type === 'loading'}
+                    className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs sm:text-sm font-semibold text-white flex items-center gap-2 shadow-lg shadow-emerald-600/25 transition"
+                  >
+                    {syncMessage.type === 'loading' ? (
+                      <Loader2 size={16} className="animate-spin" />
+                    ) : (
+                      <CloudUpload size={16} />
+                    )}
+                    บันทึกคีย์ & ส่งข้อมูลปัจจุบันขึ้น Supabase ทันที
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleConnectSupabase}
+                    disabled={syncMessage.type === 'loading'}
+                    className="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 border border-white/15 text-xs font-medium text-white flex items-center gap-2 transition"
+                  >
+                    <RefreshCw size={14} />
+                    ดึงข้อมูลล่าสุดจาก Supabase
+                  </button>
+                </div>
+
+                {syncMessage.text && (
+                  <p
+                    className={`text-xs font-medium ${
+                      syncMessage.type === 'error'
+                        ? 'text-rose-400'
+                        : syncMessage.type === 'success'
+                        ? 'text-emerald-400'
+                        : 'text-indigo-300'
+                    }`}
+                  >
+                    {syncMessage.text}
+                  </p>
+                )}
               </div>
             </div>
           )}

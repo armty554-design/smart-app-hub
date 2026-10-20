@@ -25,6 +25,7 @@ import {
   upsertCategory,
   deleteCategory,
   updateHubSettings,
+  pushLocalDataToSupabase,
   setLocalLinks,
   setLocalCategories,
   setLocalSettings,
@@ -42,7 +43,6 @@ import { IconRenderer } from './components/IconRenderer';
 import {
   Search,
   Plus,
-  Settings,
   Lock,
   Unlock,
   LayoutGrid,
@@ -58,12 +58,15 @@ import {
   Monitor,
   Smartphone,
   Pin,
+  Database,
 } from 'lucide-react';
 
 export function App() {
   const [links, setLinks] = useState<AppLink[]>([]);
   const [categories, setCategories] = useState<Category[]>(DEFAULT_CATEGORIES);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+  const [dataSource, setDataSource] = useState<'supabase' | 'local'>('local');
+  const [supabaseError, setSupabaseError] = useState<string | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(true);
 
   // Navigation & View Mode
@@ -94,6 +97,8 @@ export function App() {
     setLinks(bundle.links);
     setCategories(bundle.categories);
     setSettings(bundle.settings);
+    setDataSource(bundle.source);
+    setSupabaseError(bundle.supabaseError);
     setIsLoading(false);
   }, []);
 
@@ -279,6 +284,7 @@ export function App() {
     setLinks(bundle.links);
     setCategories(bundle.categories);
     setSettings(bundle.settings);
+    await pushLocalDataToSupabase();
   };
 
   // คำนวณภาพพื้นหลัง Wallpaper
@@ -349,6 +355,14 @@ export function App() {
 
           {/* แถบปุ่มติดตั้งแอป Android + สถานะโหมดแก้ไข */}
           <div className="flex items-center gap-2">
+            {/* สถานะการเชื่อมต่อฐานข้อมูล */}
+            {dataSource === 'supabase' && (
+              <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/30 text-[10px] text-emerald-300">
+                <Database size={10} />
+                Cloud Sync
+              </span>
+            )}
+
             {/* ปุ่มไอคอนสำหรับติดตั้งลงหน้าจอ Android / มือถือ */}
             <AndroidInstallPrompt hubTitle={settings.hub_title} />
 
@@ -997,6 +1011,8 @@ export function App() {
         links={links}
         categories={categories}
         settings={settings}
+        dataSource={dataSource}
+        supabaseError={supabaseError}
         onClose={() => setIsAdminDashboardOpen(false)}
         onAddNewLink={(catId, isDock) => openAddLinkModal(catId || activeCategoryId, isDock || false)}
         onEditLink={(link) => openEditLinkModal(link)}
@@ -1007,6 +1023,7 @@ export function App() {
         onUpsertCategory={handleAddCategory}
         onDeleteCategory={handleDeleteCategory}
         onOpenAppearanceSettings={() => setIsSettingsOpen(true)}
+        onReloadFromSupabase={loadHubData}
       />
 
       <SettingsModal
