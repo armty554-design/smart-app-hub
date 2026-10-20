@@ -961,26 +961,7 @@ export function App() {
         </div>
       </div>
 
-      {/* Modals ทั้งหมด */}
-      <PinLockModal
-        isOpen={isPinModalOpen}
-        expectedPin={settings.admin_pin || '1234'}
-        onSuccess={handlePinVerified}
-        onClose={() => setIsPinModalOpen(false)}
-      />
-
-      <LinkFormModal
-        isOpen={isLinkModalOpen}
-        editingLink={editingLink}
-        categories={categories}
-        defaultCategoryId={defaultAddCategory}
-        defaultIsDock={defaultAddIsDock}
-        iconShape={settings.icon_shape}
-        nextSortOrder={links.length + 1}
-        onSave={handleSaveLink}
-        onClose={() => setIsLinkModalOpen(false)}
-      />
-
+      {/* Modals ทั้งหมด (จัดลำดับให้ LinkFormModal และ SettingsModal อยู่บนสุดเสมอ ไม่โดน AdminDashboardModal บัง) */}
       <FolderModal
         category={openedFolderCategory}
         links={
@@ -1036,6 +1017,25 @@ export function App() {
         onDeleteCategory={handleDeleteCategory}
         onImportBundle={handleImportBundle}
         onClose={() => setIsSettingsOpen(false)}
+      />
+
+      <LinkFormModal
+        isOpen={isLinkModalOpen}
+        editingLink={editingLink}
+        categories={categories}
+        defaultCategoryId={defaultAddCategory}
+        defaultIsDock={defaultAddIsDock}
+        iconShape={settings.icon_shape}
+        nextSortOrder={links.length + 1}
+        onSave={handleSaveLink}
+        onClose={() => setIsLinkModalOpen(false)}
+      />
+
+      <PinLockModal
+        isOpen={isPinModalOpen}
+        expectedPin={settings.admin_pin || '1234'}
+        onSuccess={handlePinVerified}
+        onClose={() => setIsPinModalOpen(false)}
       />
     </div>
   );
