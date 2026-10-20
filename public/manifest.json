@@ -1,0 +1,18 @@
+{
+  "name": "Smart App Hub — ศูนย์รวมระบบงาน & Google Apps Script",
+  "short_name": "App Hub",
+  "description": "ศูนย์รวมลิงก์ระบบงานและ Google Apps Script Web Apps",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#090d16",
+  "theme_color": "#0f172a",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/app-icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

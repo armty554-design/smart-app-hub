@@ -1,0 +1,66 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-family: 'IBM Plex Sans Thai', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+/* แอนิเมชันไอคอนสั่นดุ๊กดิ๊กเหมือนหน้าจอ iPhone เวลาแก้ไข (Jiggle Mode) */
+@keyframes jiggle {
+  0% {
+    transform: rotate(-1.6deg);
+  }
+  50% {
+    transform: rotate(1.6deg);
+  }
+  100% {
+    transform: rotate(-1.6deg);
+  }
+}
+
+.animate-jiggle {
+  animation: jiggle 0.28s infinite ease-in-out;
+}
+
+/* แอนิเมชันสั่นเมื่อกดรหัส PIN ผิด */
+@keyframes shake {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  20%, 60% {
+    transform: translateX(-8px);
+  }
+  40%, 80% {
+    transform: translateX(8px);
+  }
+}
+
+.animate-shake {
+  animation: shake 0.4s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.18s ease-out forwards;
+}
+
+/* ซ่อน Scrollbar สำหรับแถบหมวดหมู่และ Dock */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
