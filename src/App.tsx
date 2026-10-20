@@ -31,6 +31,7 @@ import {
   setLocalSettings,
 } from './services/linkService';
 import { AppIconCard } from './components/AppIconCard';
+import { getSupabaseClient } from './lib/supabase';
 import { DockBar } from './components/DockBar';
 import { PinLockModal } from './components/PinLockModal';
 import { LinkFormModal } from './components/LinkFormModal';
@@ -91,19 +92,53 @@ export function App() {
   // Clock for Mobile Status Bar
   const [now, setNow] = useState(new Date());
 
-  const loadHubData = useCallback(async () => {
-    setIsLoading(true);
+  const loadHubData = useCallback(async (silent = false) => {
+    if (!silent) setIsLoading(true);
     const bundle = await fetchAllHubData();
     setLinks(bundle.links);
     setCategories(bundle.categories);
     setSettings(bundle.settings);
     setDataSource(bundle.source);
     setSupabaseError(bundle.supabaseError);
-    setIsLoading(false);
+    if (!silent) setIsLoading(false);
   }, []);
 
   useEffect(() => {
-    loadHubData();
+    loadHubData(false);
+
+    // ซิงค์ข้อมูลอัตโนมัติเมื่อสลับกลับมาเปิดหน้าเว็บหรือสลับแท็บ/เครื่อง
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible') {
+        loadHubData(true);
+      }
+    };
+    window.addEventListener('focus', handleVisibilityOrFocus);
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+
+    // เชื่อมต่อ Supabase Realtime (ถ้าเปิดใช้งาน) เพื่อซิงค์ทันทีที่มีการเพิ่ม/ลบ/แก้ไข
+    const supabase = getSupabaseClient();
+    const channel = supabase
+      ? supabase
+          .channel('smart-app-hub-sync')
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'app_links' }, () => {
+            loadHubData(true);
+          })
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'categories' }, () => {
+            loadHubData(true);
+          })
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'app_settings' }, () => {
+            loadHubData(true);
+          })
+          .subscribe()
+      : null;
+
+    return () => {
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      if (supabase && channel) {
+        supabase.removeChannel(channel);
+      }
+    };
   }, [loadHubData]);
 
   useEffect(() => {

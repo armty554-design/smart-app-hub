@@ -7,10 +7,20 @@ export interface SupabaseCredentials {
 
 const STORAGE_CREDS_KEY = 'app_hub_supabase_credentials_v1';
 
+// ค่าเริ่มต้นของโปรเจกต์ Supabase เพื่อให้ทุกเครื่อง (ทั้งบน Vercel, คอมพิวเตอร์ และมือถือ) ซิงค์ข้อมูลตรงกันอัตโนมัติทันทีโดยไม่ต้องกรอกซ้ำ
+const DEFAULT_SUPABASE_URL = 'https://psoygjfnqiubuuuhapfo.supabase.co';
+const DEFAULT_SUPABASE_ANON_KEY =
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBzb3lnamZucWl1YnV1dWhhcGZvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI0NjUzMjcsImV4cCI6MjEwODA0MTMyN30.zoEbYdn6frrt3U1XdE0UALgWvTagnni_yyw8v8aLBiA';
+
 let cachedClient: SupabaseClient | null = null;
 let cachedConfigHash = '';
 
 export function getSupabaseCredentials(): SupabaseCredentials {
+  // ปิดการเชื่อมต่อ Cloud ระหว่างรัน Unit Test (Vitest) เพื่อไม่ให้กระทบข้อมูลจริง
+  if (import.meta.env.MODE === 'test') {
+    return { url: '', anonKey: '' };
+  }
+
   const envUrl = (import.meta.env.VITE_SUPABASE_URL || '').trim();
   const envKey = (import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim();
 
@@ -29,8 +39,8 @@ export function getSupabaseCredentials(): SupabaseCredentials {
   }
 
   return {
-    url: envUrl && !envUrl.includes('your-project-id') ? envUrl : '',
-    anonKey: envKey && !envKey.includes('your-supabase-anon') ? envKey : '',
+    url: envUrl && !envUrl.includes('your-project-id') ? envUrl : DEFAULT_SUPABASE_URL,
+    anonKey: envKey && !envKey.includes('your-supabase-anon') ? envKey : DEFAULT_SUPABASE_ANON_KEY,
   };
 }
 
