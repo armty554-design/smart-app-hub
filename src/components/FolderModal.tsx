@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { AppLink, Category, FolderLayout, IconShape } from '../types/app';
+import { AppLink, Category, EmployeeProfile, FolderLayout, IconShape } from '../types/app';
 import { IconRenderer } from './IconRenderer';
+import { FolderNotesSection } from './FolderNotesSection';
 import {
   X,
   Plus,
@@ -18,6 +19,7 @@ interface FolderModalProps {
   shape: IconShape;
   defaultLayout?: FolderLayout;
   isEditMode: boolean;
+  currentEmployee?: EmployeeProfile | null;
   onClose: () => void;
   onEditLink: (link: AppLink) => void;
   onDeleteLink: (link: AppLink) => void;
@@ -31,6 +33,7 @@ export const FolderModal: React.FC<FolderModalProps> = ({
   shape,
   defaultLayout = 'detail-2col',
   isEditMode,
+  currentEmployee = null,
   onClose,
   onEditLink,
   onDeleteLink,
@@ -152,7 +155,21 @@ export const FolderModal: React.FC<FolderModalProps> = ({
         </div>
 
         {/* พื้นที่แสดงรายการตามรูปแบบที่เลือก */}
-        <div className="flex-1 overflow-y-auto pr-1">
+        <div className="flex-1 overflow-y-auto pr-1 space-y-4">
+          {/* สมุดโน้ตประจำโฟลเดอร์ */}
+          <FolderNotesSection
+            folderId={`cat-${category.id}`}
+            folderName={category.name}
+            employeeCode={currentEmployee ? currentEmployee.code : isEditMode ? 'admin' : 'public'}
+            authorName={
+              currentEmployee
+                ? `${currentEmployee.firstName} (${currentEmployee.code})`
+                : isEditMode
+                ? 'ผู้ดูแลระบบ (Admin)'
+                : 'ผู้ใช้งาน'
+            }
+          />
+
           {/* รูปแบบที่ 1: แบบ 2 คอลัมน์ (คอลัมน์ที่ 1 = ไอคอนและชื่อเว็บ | คอลัมน์ที่ 2 = คำอธิบายรายละเอียด) */}
           {activeLayout === 'detail-2col' && (
             <div className="space-y-2.5">

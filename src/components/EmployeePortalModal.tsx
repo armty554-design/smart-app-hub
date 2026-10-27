@@ -1,6 +1,8 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   AppLink,
+  EmployeeLinkItem,
+  EmployeePersonalFolder,
   EmployeeProfile,
   EmployeeSheetFolder,
   IconShape,
@@ -10,12 +12,22 @@ import {
   findEmployeeByCode,
 } from '../services/employeeService';
 import {
+  addLinkToPersonalFolder,
+  createPersonalFolder,
+  deletePersonalFolder,
   getEmployeeFolders,
   getEmployeeLinksSheetUrl,
   getEmployeeScheduleItems,
+  getFolderNotesCountMap,
+  getPersonalFoldersForEmployee,
+  removeLinkFromPersonalFolder,
   searchAcrossEmployeeFolders,
+  syncEmployeeWorkspaceFromCloud,
+  updateLinkInPersonalFolder,
+  updatePersonalFolder,
 } from '../services/employeeLinksService';
 import { IconRenderer } from './IconRenderer';
+import { FolderNotesSection } from './FolderNotesSection';
 import {
   UserCheck,
   Building2,
@@ -38,12 +50,20 @@ import {
   LogIn,
   Folder,
   FolderOpen,
+  FolderPlus,
   Search,
   ArrowLeft,
   CalendarClock,
   FileSpreadsheet,
   History,
   Layers,
+  Star,
+  Plus,
+  Pencil,
+  Trash2,
+  BookmarkPlus,
+  StickyNote,
+  Lock,
 } from 'lucide-react';
 
 interface EmployeePortalModalProps {
@@ -59,8 +79,19 @@ interface EmployeePortalModalProps {
   onLoginSuccess: (employee: EmployeeProfile) => void;
   onLogout: () => void;
   onRefreshSheet: () => Promise<void>;
+  onWorkspaceChanged?: () => void;
   onClose: () => void;
 }
+
+const PERSONAL_FOLDER_COLOR_PRESETS = [
+  { label: 'ชมพูบานเย็น', value: '#ec4899' },
+  { label: 'ฟ้าสดใส', value: '#0ea5e9' },
+  { label: 'น้ำเงินคราม', value: '#6366f1' },
+  { label: 'เขียวมรกต', value: '#10b981' },
+  { label: 'ส้มอำพัน', value: '#f59e0b' },
+  { label: 'ม่วงไวโอเล็ต', value: '#8b5cf6' },
+  { label: 'แดงโรส', value: '#f43f5e' },
+];
 
 export const EmployeePortalModal: React.FC<EmployeePortalModalProps> = ({
   isOpen,
@@ -74,6 +105,7 @@ export const EmployeePortalModal: React.FC<EmployeePortalModalProps> = ({
   onLoginSuccess,
   onLogout,
   onRefreshSheet,
+  onWorkspaceChanged,
   onClose,
 }) => {
   const [enteredCode, setEnteredCode] = useState('');
@@ -89,27 +121,78 @@ export const EmployeePortalModal: React.FC<EmployeePortalModalProps> = ({
   const employeeFolders = useMemo(() => getEmployeeFolders(), []);
   const scheduleItems = useMemo(() => getEmployeeScheduleItems(), []);
 
+  // State สำหรับโฟลเดอร์ส่วนตัวของพนักงานแต่ละคน + จำนวนโน้ตในแต่ละโฟลเดอร์
+  const [personalFolders, setPersonalFolders] = useState<EmployeePersonalFolder[]>([]);
+  const [notesCountMap, setNotesCountMap] = useState<Record<string, number>>({});
+  const [statusBanner, setStatusBanner] = useState<string>('');
+
+  // ฟอร์มสร้าง/แก้ไขโฟลเดอร์ส่วนตัว
+  const [isFolderFormOpen, setIsFolderFormOpen] = useState(false);
+  const [editingPersonalFolderId, setEditingPersonalFolderId] = useState<string | null>(null);
+  const [folderNameInput, setFolderNameInput] = useState('');
+  const [folderDescInput, setFolderDescInput] = useState('');
+  const [folderColorInput, setFolderColorInput] = useState('#ec4899');
+
+  // ฟอร์มเพิ่ม/แก้ไขลิงก์ส่วนตัวในโฟลเดอร์ส่วนตัว
+  const [isPersonalLinkFormOpen, setIsPersonalLinkFormOpen] = useState(false);
+  const [editingPersonalLinkId, setEditingPersonalLinkId] = useState<string | null>(null);
+  const [linkTitleInput, setLinkTitleInput] = useState('');
+  const [linkUrlInput, setLinkUrlInput] = useState('');
+  const [linkTopicInput, setLinkTopicInput] = useState('');
+  const [linkDescInput, setLinkDescInput] = useState('');
+
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [folderCategoryFilter, setFolderCategoryFilter] = useState<
-    'active' | 'archive' | 'all'
+    'active' | 'personal' | 'archive' | 'all'
   >('active');
   const [globalSearchQuery, setGlobalSearchQuery] = useState('');
   const [inFolderSearch, setInFolderSearch] = useState('');
   const [selectedTopicFilter, setSelectedTopicFilter] = useState<string>('all');
+
+  const refreshPersonalWorkspace = useCallback(
+    async (empCode?: string) => {
+      const code = empCode || currentEmployee?.code;
+      if (!code) {
+        setPersonalFolders([]);
+        setNotesCountMap(getFolderNotesCountMap('public'));
+        return;
+      }
+      const localFolders = getPersonalFoldersForEmployee(code);
+      setPersonalFolders(localFolders);
+      setNotesCountMap(getFolderNotesCountMap(code));
+
+      // ซิงค์ข้อมูลจาก Supabase Cloud แบบพื้นหลัง
+      const synced = await syncEmployeeWorkspaceFromCloud(code);
+      setPersonalFolders(synced.personalFolders);
+      setNotesCountMap(getFolderNotesCountMap(code));
+      onWorkspaceChanged?.();
+    },
+    [currentEmployee?.code, onWorkspaceChanged]
+  );
 
   useEffect(() => {
     if (isOpen) {
       setEnteredCode('');
       setErrorMsg('');
       setErrorShake(false);
-      if (initialFolderId) {
+      refreshPersonalWorkspace(currentEmployee?.code);
+
+      if (initialFolderId === '__create_personal__') {
+        setActivePortalTab('folders');
+        setSelectedFolderId(null);
+        setEditingPersonalFolderId(null);
+        setFolderNameInput('');
+        setFolderDescInput('');
+        setFolderColorInput('#ec4899');
+        setIsFolderFormOpen(true);
+      } else if (initialFolderId) {
         setActivePortalTab('folders');
         setSelectedFolderId(initialFolderId);
         setInFolderSearch('');
         setSelectedTopicFilter('all');
       }
     }
-  }, [isOpen, currentEmployee, initialFolderId]);
+  }, [isOpen, currentEmployee?.code, initialFolderId, refreshPersonalWorkspace]);
 
   // ตรวจจับการกดปุ่มตัวเลขบนคีย์บอร์ดเมื่ออยู่ในหน้าล็อกอินพนักงาน
   useEffect(() => {
@@ -133,6 +216,13 @@ export const EmployeePortalModal: React.FC<EmployeePortalModalProps> = ({
   });
 
   if (!isOpen) return null;
+
+  const showTempBanner = (msg: string) => {
+    setStatusBanner(msg);
+    setTimeout(() => {
+      setStatusBanner((prev) => (prev === msg ? '' : prev));
+    }, 3200);
+  };
 
   const matchedPreview =
     enteredCode.length >= 4 ? findEmployeeByCode(enteredCode, employees) : null;
@@ -178,15 +268,207 @@ export const EmployeePortalModal: React.FC<EmployeePortalModalProps> = ({
     setTimeout(() => setCopiedCode(false), 2000);
   };
 
+  // ============================================================================
+  // การจัดการโฟลเดอร์ส่วนตัวของพนักงาน (สร้าง / แก้ไข / ลบโฟลเดอร์ และเพิ่ม/ลบลิงก์)
+  // ============================================================================
+  const handleOpenCreatePersonalFolder = () => {
+    setEditingPersonalFolderId(null);
+    setFolderNameInput('');
+    setFolderDescInput('');
+    setFolderColorInput('#ec4899');
+    setIsFolderFormOpen(true);
+  };
+
+  const handleOpenEditPersonalFolder = (folder: EmployeePersonalFolder, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setEditingPersonalFolderId(folder.id);
+    setFolderNameInput(folder.name);
+    setFolderDescInput(folder.description);
+    setFolderColorInput(folder.color || '#ec4899');
+    setIsFolderFormOpen(true);
+  };
+
+  const handleSavePersonalFolder = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentEmployee || !folderNameInput.trim()) return;
+
+    if (editingPersonalFolderId) {
+      const updated = await updatePersonalFolder(currentEmployee.code, editingPersonalFolderId, {
+        name: folderNameInput,
+        description: folderDescInput,
+        color: folderColorInput,
+      });
+      setPersonalFolders(updated);
+      showTempBanner(`แก้ไขโฟลเดอร์ส่วนตัว "${folderNameInput.trim()}" เรียบร้อยแล้ว`);
+    } else {
+      const updated = await createPersonalFolder(currentEmployee.code, {
+        name: folderNameInput,
+        description: folderDescInput,
+        color: folderColorInput,
+      });
+      setPersonalFolders(updated);
+      showTempBanner(`สร้างโฟลเดอร์ส่วนตัว "${folderNameInput.trim()}" เรียบร้อยแล้ว`);
+    }
+
+    setIsFolderFormOpen(false);
+    setEditingPersonalFolderId(null);
+    onWorkspaceChanged?.();
+  };
+
+  const handleDeletePersonalFolder = async (
+    folder: EmployeePersonalFolder,
+    e?: React.MouseEvent
+  ) => {
+    e?.stopPropagation();
+    if (!currentEmployee) return;
+    if (
+      !window.confirm(
+        `ต้องการลบโฟลเดอร์ส่วนตัว "${folder.name}" ของคุณใช่หรือไม่?`
+      )
+    ) {
+      return;
+    }
+    const updated = await deletePersonalFolder(currentEmployee.code, folder.id);
+    setPersonalFolders(updated);
+    if (selectedFolderId === folder.id) {
+      setSelectedFolderId(null);
+    }
+    showTempBanner(`ลบโฟลเดอร์ส่วนตัว "${folder.name}" เรียบร้อยแล้ว`);
+    onWorkspaceChanged?.();
+  };
+
+  const handleOpenAddPersonalLink = () => {
+    setEditingPersonalLinkId(null);
+    setLinkTitleInput('');
+    setLinkUrlInput('');
+    setLinkTopicInput('งานประจำวัน');
+    setLinkDescInput('');
+    setIsPersonalLinkFormOpen(true);
+  };
+
+  const handleOpenEditPersonalLink = (link: EmployeeLinkItem, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setEditingPersonalLinkId(link.id);
+    setLinkTitleInput(link.title);
+    setLinkUrlInput(link.url);
+    setLinkTopicInput(link.codeOrTopic || 'ส่วนตัว');
+    setLinkDescInput(link.description || '');
+    setIsPersonalLinkFormOpen(true);
+  };
+
+  const handleSavePersonalLink = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentEmployee || !selectedFolderId || !linkTitleInput.trim() || !linkUrlInput.trim()) {
+      return;
+    }
+
+    if (editingPersonalLinkId) {
+      const updated = await updateLinkInPersonalFolder(
+        currentEmployee.code,
+        selectedFolderId,
+        editingPersonalLinkId,
+        {
+          title: linkTitleInput,
+          url: linkUrlInput,
+          codeOrTopic: linkTopicInput,
+          description: linkDescInput,
+        }
+      );
+      setPersonalFolders(updated);
+      showTempBanner(`อัปเดตลิงก์ส่วนตัว "${linkTitleInput.trim()}" เรียบร้อยแล้ว`);
+    } else {
+      const updated = await addLinkToPersonalFolder(currentEmployee.code, selectedFolderId, {
+        title: linkTitleInput,
+        url: linkUrlInput,
+        codeOrTopic: linkTopicInput,
+        description: linkDescInput,
+      });
+      setPersonalFolders(updated);
+      showTempBanner(`เพิ่มลิงก์ "${linkTitleInput.trim()}" ลงในโฟลเดอร์ส่วนตัวแล้ว`);
+    }
+
+    setIsPersonalLinkFormOpen(false);
+    setEditingPersonalLinkId(null);
+    onWorkspaceChanged?.();
+  };
+
+  const handleRemovePersonalLink = async (link: EmployeeLinkItem, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    if (!currentEmployee || !selectedFolderId) return;
+    if (!window.confirm(`ต้องการลบลิงก์ "${link.title}" ออกจากโฟลเดอร์ส่วนตัวใช่หรือไม่?`)) {
+      return;
+    }
+    const updated = await removeLinkFromPersonalFolder(
+      currentEmployee.code,
+      selectedFolderId,
+      link.id
+    );
+    setPersonalFolders(updated);
+    showTempBanner(`นำลิงก์ "${link.title}" ออกจากโฟลเดอร์ส่วนตัวแล้ว`);
+    onWorkspaceChanged?.();
+  };
+
+  const handleBookmarkLinkToPersonal = async (
+    item: EmployeeLinkItem,
+    targetPersonalFolderId?: string,
+    e?: React.MouseEvent
+  ) => {
+    e?.stopPropagation();
+    if (!currentEmployee) return;
+    const targetFolder =
+      personalFolders.find((f) => f.id === targetPersonalFolderId) || personalFolders[0];
+    if (!targetFolder) return;
+
+    const alreadyExists = targetFolder.links.some((l) => l.url === item.url && l.title === item.title);
+    if (alreadyExists) {
+      showTempBanner(`ลิงก์ "${item.title}" อยู่ในโฟลเดอร์ "${targetFolder.name}" แล้ว`);
+      return;
+    }
+
+    const updated = await addLinkToPersonalFolder(currentEmployee.code, targetFolder.id, {
+      title: item.title,
+      url: item.url,
+      codeOrTopic: item.codeOrTopic || 'บันทึกจากแผ่นงาน',
+      description: item.description,
+      badge: item.badge,
+      iconName: item.iconName,
+      bgStyle: item.bgStyle,
+    });
+    setPersonalFolders(updated);
+    showTempBanner(`⭐ เก็บลิงก์ "${item.title}" เข้าโฟลเดอร์ส่วนตัว "${targetFolder.name}" แล้ว!`);
+    onWorkspaceChanged?.();
+  };
+
   const branchColleagues = currentEmployee
     ? employees.filter((e) => e.branch && e.branch === currentEmployee.branch)
     : [];
 
-  const activeFolder: EmployeeSheetFolder | null = selectedFolderId
-    ? employeeFolders.find((f) => f.id === selectedFolderId) || null
+  // ตรวจสอบว่าโฟลเดอร์ที่กำลังเปิดอยู่เป็น "โฟลเดอร์ส่วนตัว" หรือ "โฟลเดอร์แผ่นงาน 17 แผ่นงาน"
+  const activePersonalFolder: EmployeePersonalFolder | null = selectedFolderId
+    ? personalFolders.find((f) => f.id === selectedFolderId) || null
     : null;
 
+  const activeSheetFolder: EmployeeSheetFolder | null =
+    selectedFolderId && !activePersonalFolder
+      ? employeeFolders.find((f) => f.id === selectedFolderId) || null
+      : null;
+
+  const activeFolder: EmployeeSheetFolder | null = activePersonalFolder
+    ? {
+        id: activePersonalFolder.id,
+        sheetName: activePersonalFolder.name,
+        gid: 'personal',
+        description: activePersonalFolder.description,
+        color: activePersonalFolder.color,
+        iconName: activePersonalFolder.iconName,
+        links: activePersonalFolder.links,
+      }
+    : activeSheetFolder;
+
+  const isViewingPersonalFolder = Boolean(activePersonalFolder);
+
   const visibleFolders = employeeFolders.filter((f) => {
+    if (folderCategoryFilter === 'personal') return false;
     if (folderCategoryFilter === 'active') return !f.isArchive;
     if (folderCategoryFilter === 'archive') return Boolean(f.isArchive);
     return true;
@@ -223,7 +505,12 @@ export const EmployeePortalModal: React.FC<EmployeePortalModalProps> = ({
     : [];
 
   const globalSearchResults = globalSearchQuery.trim()
-    ? searchAcrossEmployeeFolders(globalSearchQuery, employeeFolders, true)
+    ? searchAcrossEmployeeFolders(
+        globalSearchQuery,
+        employeeFolders,
+        true,
+        personalFolders
+      )
     : [];
 
   return (
@@ -265,7 +552,7 @@ export const EmployeePortalModal: React.FC<EmployeePortalModalProps> = ({
               <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-400/30 text-[10px] font-semibold text-emerald-300 mb-2">
                 <Sparkles size={11} />
                 <span>
-                  สำหรับพนักงาน ({employees.length} คน) • ปลดล็อก 17 โฟลเดอร์ลิงก์งาน
+                  สำหรับพนักงาน ({employees.length} คน) • โฟลเดอร์ส่วนตัว + 17 แผ่นงาน
                 </span>
               </div>
               <h2 className="text-xl font-bold text-white">
@@ -273,7 +560,7 @@ export const EmployeePortalModal: React.FC<EmployeePortalModalProps> = ({
               </h2>
               <p className="text-xs text-slate-400 mt-1">
                 กรอก <strong className="text-sky-300">รหัสพนักงาน 6 หลัก</strong>{' '}
-                เพื่อเข้าถึงโฟลเดอร์ลิงก์เฉพาะพนักงาน (แยกตามแผ่นงาน)
+                เพื่อเข้าถึงโฟลเดอร์ส่วนตัว สมุดโน้ต และโฟลเดอร์ลิงก์งาน 17 แผ่นงาน
               </p>
             </div>
 
@@ -384,7 +671,7 @@ export const EmployeePortalModal: React.FC<EmployeePortalModalProps> = ({
           </div>
         ) : (
           /* =====================================================================
-              กรณีที่ 2: ล็อกอินแล้ว -> แสดงคลังโฟลเดอร์ลิงก์เฉพาะพนักงาน 17 แผ่นงาน + บัตรพนักงาน
+              กรณีที่ 2: ล็อกอินแล้ว -> แสดงโฟลเดอร์ส่วนตัวของพนักงาน + โฟลเดอร์ 17 แผ่นงาน + โน้ตในโฟลเดอร์
              ===================================================================== */
           <div className="flex flex-col h-full overflow-hidden">
             {/* ส่วนหัวบัตรพนักงาน */}
@@ -434,9 +721,12 @@ export const EmployeePortalModal: React.FC<EmployeePortalModalProps> = ({
                       : 'bg-white/10 hover:bg-white/20 text-white/90'
                   }`}
                 >
-                  <FolderOpen size={14} className={activePortalTab === 'folders' ? 'text-sky-600' : 'text-sky-300'} />
+                  <FolderOpen
+                    size={14}
+                    className={activePortalTab === 'folders' ? 'text-sky-600' : 'text-sky-300'}
+                  />
                   <span>
-                    โฟลเดอร์ลิงก์พนักงาน ({employeeFolders.length} แผ่นงาน • {totalLinksCount} ลิงก์)
+                    โฟลเดอร์ส่วนตัว ({personalFolders.length}) & แผ่นงาน ({employeeFolders.length})
                   </span>
                 </button>
 
@@ -481,18 +771,136 @@ export const EmployeePortalModal: React.FC<EmployeePortalModalProps> = ({
               </div>
             </div>
 
+            {/* แถบแจ้งเตือนสถานะเมื่อบันทึกโฟลเดอร์/โน้ต/ลิงก์ */}
+            {statusBanner && (
+              <div className="mx-4 sm:mx-6 mt-3 px-4 py-2.5 rounded-2xl bg-emerald-500/20 border border-emerald-400/40 text-xs font-semibold text-emerald-200 flex items-center justify-between gap-2 animate-fade-in">
+                <span className="flex items-center gap-2">
+                  <CheckCircle2 size={15} className="text-emerald-400 shrink-0" />
+                  <span>{statusBanner}</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setStatusBanner('')}
+                  className="text-emerald-300 hover:text-white"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            )}
+
             {/* เนื้อหาในแต่ละแท็บของหน้าพนักงาน */}
             <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
               {/* =====================================================================
-                  แท็บที่ 1: โฟลเดอร์ลิงก์เฉพาะพนักงาน (แยกตามแผ่นงาน 17 โฟลเดอร์ พร้อมคำอธิบาย)
+                  แท็บที่ 1: โฟลเดอร์ส่วนตัวของพนักงานแต่ละคน + โฟลเดอร์ 17 แผ่นงาน + โน้ตในโฟลเดอร์
                  ===================================================================== */}
               {activePortalTab === 'folders' && (
                 <>
+                  {/* ฟอร์มสร้างหรือแก้ไขโฟลเดอร์ส่วนตัวของพนักงาน */}
+                  {isFolderFormOpen && (
+                    <form
+                      onSubmit={handleSavePersonalFolder}
+                      className="p-4 rounded-2xl bg-slate-950 border-2 border-pink-500/40 space-y-3.5 shadow-xl animate-fade-in"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <FolderPlus size={17} className="text-pink-400" />
+                          <h4 className="text-sm font-bold text-white">
+                            {editingPersonalFolderId
+                              ? 'แก้ไขโฟลเดอร์ส่วนตัวของคุณ'
+                              : `สร้างโฟลเดอร์ส่วนตัวใหม่ (เฉพาะรหัสพนักงาน ${currentEmployee.code})`}
+                          </h4>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsFolderFormOpen(false);
+                            setEditingPersonalFolderId(null);
+                          }}
+                          className="p-1 rounded-lg bg-white/10 hover:bg-white/20 text-slate-300"
+                        >
+                          <X size={15} />
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-medium text-slate-300 mb-1">
+                            ชื่อโฟลเดอร์ส่วนตัว *
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            value={folderNameInput}
+                            onChange={(e) => setFolderNameInput(e.target.value)}
+                            placeholder="เช่น งานประจำวันของฉัน, ลิงก์สาขา, รายงานส่งเช้า..."
+                            className="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-white/15 focus:border-pink-400 text-xs sm:text-sm text-white focus:outline-none"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-medium text-slate-300 mb-1">
+                            คำอธิบายโฟลเดอร์ส่วนตัว
+                          </label>
+                          <input
+                            type="text"
+                            value={folderDescInput}
+                            onChange={(e) => setFolderDescInput(e.target.value)}
+                            placeholder="เช่น รวมลิงก์และสมุดโน้ตที่ใช้ทุกวัน"
+                            className="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-white/15 focus:border-pink-400 text-xs sm:text-sm text-white focus:outline-none"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-xs text-slate-400">สีโฟลเดอร์:</span>
+                          {PERSONAL_FOLDER_COLOR_PRESETS.map((preset) => (
+                            <button
+                              key={preset.value}
+                              type="button"
+                              onClick={() => setFolderColorInput(preset.value)}
+                              className={`w-7 h-7 rounded-full border-2 transition flex items-center justify-center ${
+                                folderColorInput === preset.value
+                                  ? 'border-white scale-110 shadow-lg'
+                                  : 'border-transparent opacity-75 hover:opacity-100'
+                              }`}
+                              style={{ backgroundColor: preset.value }}
+                              title={preset.label}
+                            >
+                              {folderColorInput === preset.value && (
+                                <Check size={13} className="text-white" />
+                              )}
+                            </button>
+                          ))}
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsFolderFormOpen(false);
+                              setEditingPersonalFolderId(null);
+                            }}
+                            className="px-3.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs text-slate-300"
+                          >
+                            ยกเลิก
+                          </button>
+                          <button
+                            type="submit"
+                            className="px-4 py-1.5 rounded-xl bg-gradient-to-r from-pink-500 to-indigo-600 hover:from-pink-400 hover:to-indigo-500 text-xs font-bold text-white shadow"
+                          >
+                            {editingPersonalFolderId ? 'บันทึกการแก้ไข' : 'สร้างโฟลเดอร์ส่วนตัว'}
+                          </button>
+                        </div>
+                      </div>
+                    </form>
+                  )}
+
                   {!activeFolder ? (
-                    /* มุมมองรวมโฟลเดอร์ (แผ่นงานละ 1 โฟลเดอร์) */
-                    <div className="space-y-4">
-                      {/* แถบค้นหาข้ามทุกแผ่นงาน + สวิตช์กรองแผ่นงาน */}
-                      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+                    /* มุมมองรวมโฟลเดอร์: แสดงโฟลเดอร์ส่วนตัวของพนักงาน + โฟลเดอร์ 17 แผ่นงาน */
+                    <div className="space-y-5">
+                      {/* แถบค้นหาข้ามทุกโฟลเดอร์ + สวิตช์กรองหมวดโฟลเดอร์ */}
+                      <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
                         <div className="relative flex-1">
                           <Search
                             size={16}
@@ -502,7 +910,7 @@ export const EmployeePortalModal: React.FC<EmployeePortalModalProps> = ({
                             type="text"
                             value={globalSearchQuery}
                             onChange={(e) => setGlobalSearchQuery(e.target.value)}
-                            placeholder="ค้นหาลิงก์พนักงานจากทุกโฟลเดอร์ (เช่น 1.1, จัดส่งตรงเวลา, CRM, Power BI, คูปอง, รถ S)..."
+                            placeholder="ค้นหาลิงก์จากโฟลเดอร์ส่วนตัวและทั้ง 17 แผ่นงาน (เช่น 1.1, จัดส่งตรงเวลา, CRM, Power BI)..."
                             className="w-full pl-10 pr-9 py-2.5 rounded-2xl bg-slate-950 border border-white/15 focus:border-sky-400 text-xs sm:text-sm text-white placeholder:text-slate-500 focus:outline-none"
                           />
                           {globalSearchQuery && (
@@ -516,23 +924,35 @@ export const EmployeePortalModal: React.FC<EmployeePortalModalProps> = ({
                           )}
                         </div>
 
-                        <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-slate-950 border border-white/10 shrink-0">
+                        <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-slate-950 border border-white/10 overflow-x-auto no-scrollbar shrink-0">
                           <button
                             type="button"
                             onClick={() => setFolderCategoryFilter('active')}
-                            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 ${
+                            className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition flex items-center gap-1.5 ${
                               folderCategoryFilter === 'active'
                                 ? 'bg-sky-600 text-white shadow'
                                 : 'text-slate-400 hover:text-white'
                             }`}
                           >
                             <Layers size={13} />
-                            <span>ใช้งานปัจจุบัน (12)</span>
+                            <span>หน้าหลัก + ปัจจุบัน</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setFolderCategoryFilter('personal')}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition flex items-center gap-1.5 ${
+                              folderCategoryFilter === 'personal'
+                                ? 'bg-pink-600 text-white shadow'
+                                : 'text-pink-300 hover:text-white'
+                            }`}
+                          >
+                            <Star size={13} />
+                            <span>ส่วนตัวของฉัน ({personalFolders.length})</span>
                           </button>
                           <button
                             type="button"
                             onClick={() => setFolderCategoryFilter('archive')}
-                            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 ${
+                            className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition flex items-center gap-1.5 ${
                               folderCategoryFilter === 'archive'
                                 ? 'bg-sky-600 text-white shadow'
                                 : 'text-slate-400 hover:text-white'
@@ -544,23 +964,23 @@ export const EmployeePortalModal: React.FC<EmployeePortalModalProps> = ({
                           <button
                             type="button"
                             onClick={() => setFolderCategoryFilter('all')}
-                            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
+                            className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition ${
                               folderCategoryFilter === 'all'
                                 ? 'bg-sky-600 text-white shadow'
                                 : 'text-slate-400 hover:text-white'
                             }`}
                           >
-                            ทั้งหมด (17)
+                            ทั้งหมด
                           </button>
                         </div>
                       </div>
 
-                      {/* กรณีมีการพิมพ์ค้นหา -> แสดงผลลัพธ์การค้นหาแบบตาราง 2 คอลัมน์พร้อมชื่อโฟลเดอร์ */}
+                      {/* กรณีมีการพิมพ์ค้นหา -> แสดงผลลัพธ์การค้นหาแบบตาราง 2 คอลัมน์พร้อมปุ่มเก็บเข้าส่วนตัว */}
                       {globalSearchQuery.trim() ? (
                         <div className="space-y-2.5">
                           <div className="flex items-center justify-between text-xs text-slate-400 px-1">
                             <span>
-                              ผลการค้นหา &quot;{globalSearchQuery}&quot; จากทุกแผ่นงาน
+                              ผลการค้นหา &quot;{globalSearchQuery}&quot; จากโฟลเดอร์ส่วนตัวและทุกแผ่นงาน
                             </span>
                             <span className="text-sky-300 font-semibold">
                               พบ {globalSearchResults.length} ลิงก์
@@ -573,9 +993,9 @@ export const EmployeePortalModal: React.FC<EmployeePortalModalProps> = ({
                             </div>
                           ) : (
                             <div className="space-y-2">
-                              {globalSearchResults.map(({ folder, link }) => (
+                              {globalSearchResults.map(({ folder, link, isPersonalFolder }) => (
                                 <div
-                                  key={link.id}
+                                  key={`${folder.id}-${link.id}`}
                                   onClick={() =>
                                     window.open(
                                       link.url,
@@ -602,8 +1022,14 @@ export const EmployeePortalModal: React.FC<EmployeePortalModalProps> = ({
                                     </div>
                                     <div className="min-w-0">
                                       <div className="flex flex-wrap items-center gap-1 mb-0.5">
-                                        <span className="px-2 py-0.5 rounded-md bg-sky-500/20 text-sky-300 text-[10px] font-bold">
-                                          โฟลเดอร์: {folder.sheetName}
+                                        <span
+                                          className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                                            isPersonalFolder
+                                              ? 'bg-pink-500/20 text-pink-300'
+                                              : 'bg-sky-500/20 text-sky-300'
+                                          }`}
+                                        >
+                                          {folder.sheetName}
                                         </span>
                                         {link.codeOrTopic && (
                                           <span className="px-1.5 py-0.5 rounded bg-white/10 text-slate-300 text-[10px] font-mono">
@@ -626,10 +1052,25 @@ export const EmployeePortalModal: React.FC<EmployeePortalModalProps> = ({
                                         {link.url}
                                       </p>
                                     </div>
-                                    <ExternalLink
-                                      size={15}
-                                      className="text-slate-400 group-hover:text-sky-300 shrink-0"
-                                    />
+                                    <div className="flex items-center gap-2 shrink-0">
+                                      {!isPersonalFolder && (
+                                        <button
+                                          type="button"
+                                          onClick={(e) =>
+                                            handleBookmarkLinkToPersonal(link, undefined, e)
+                                          }
+                                          className="px-2.5 py-1.5 rounded-xl bg-pink-500/15 hover:bg-pink-500/30 border border-pink-400/30 text-[11px] font-semibold text-pink-200 flex items-center gap-1 transition"
+                                          title="เก็บลิงก์นี้เข้าโฟลเดอร์ส่วนตัวของฉัน"
+                                        >
+                                          <BookmarkPlus size={13} />
+                                          <span className="hidden md:inline">เก็บเข้าส่วนตัว</span>
+                                        </button>
+                                      )}
+                                      <ExternalLink
+                                        size={15}
+                                        className="text-slate-400 group-hover:text-sky-300 shrink-0"
+                                      />
+                                    </div>
                                   </div>
                                 </div>
                               ))}
@@ -637,87 +1078,244 @@ export const EmployeePortalModal: React.FC<EmployeePortalModalProps> = ({
                           )}
                         </div>
                       ) : (
-                        /* กริดแสดงโฟลเดอร์แยกตามแผ่นงาน (1 แผ่นงาน = 1 โฟลเดอร์) */
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
-                          {visibleFolders.map((folder) => (
-                            <div
-                              key={folder.id}
-                              onClick={() => {
-                                setSelectedFolderId(folder.id);
-                                setInFolderSearch('');
-                                setSelectedTopicFilter('all');
-                              }}
-                              className="group relative rounded-2xl bg-slate-950/75 hover:bg-slate-800/85 border border-white/12 hover:border-sky-400/50 p-4 cursor-pointer transition-all hover:-translate-y-0.5 shadow-lg flex flex-col justify-between gap-3"
-                            >
-                              <div>
-                                <div className="flex items-start justify-between gap-2.5">
-                                  <div className="flex items-center gap-3 min-w-0">
-                                    <div
-                                      className="w-11 h-11 rounded-2xl flex items-center justify-center text-white shadow-md shrink-0"
-                                      style={{
-                                        background: `linear-gradient(135deg, ${folder.color} 0%, #1e293b 100%)`,
-                                      }}
-                                    >
-                                      <Folder size={22} />
-                                    </div>
-                                    <div className="min-w-0">
-                                      <div className="flex items-center gap-1.5">
-                                        <h3 className="text-sm font-bold text-white group-hover:text-sky-300 truncate">
-                                          {folder.sheetName}
-                                        </h3>
-                                      </div>
-                                      <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-sky-400">
-                                        {folder.links.length} ลิงก์ในโฟลเดอร์
-                                      </span>
-                                    </div>
+                        <>
+                          {/* ===============================================================
+                              หมวดที่ 1: โฟลเดอร์ส่วนตัวของพนักงานแต่ละคน (แยกตามรหัสพนักงาน)
+                             =============================================================== */}
+                          {folderCategoryFilter !== 'archive' && (
+                            <div className="p-4 rounded-3xl bg-gradient-to-br from-pink-950/35 via-slate-950/85 to-indigo-950/40 border border-pink-400/30 space-y-3.5">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <Star size={17} className="text-pink-400 fill-pink-400" />
+                                    <h3 className="text-sm sm:text-base font-bold text-white">
+                                      โฟลเดอร์ส่วนตัวของ {currentEmployee.firstName} (เฉพาะรหัส{' '}
+                                      {currentEmployee.code})
+                                    </h3>
+                                    <span className="px-2 py-0.5 rounded-full bg-pink-500/20 border border-pink-400/30 text-[10px] font-bold text-pink-200 flex items-center gap-1">
+                                      <Lock size={10} /> ส่วนตัวเฉพาะคุณ
+                                    </span>
                                   </div>
-
-                                  <span className="px-2 py-0.5 rounded-full bg-white/10 text-[10px] font-medium text-slate-300 shrink-0">
-                                    เปิดโฟลเดอร์ →
-                                  </span>
+                                  <p className="text-xs text-slate-300 mt-0.5">
+                                    สร้างโฟลเดอร์ส่วนตัว เก็บลิงก์ที่ใช้บ่อย และจดสมุดโน้ตส่วนตัวของคุณได้ไม่จำกัด
+                                  </p>
                                 </div>
 
-                                <p className="mt-2.5 text-xs text-slate-300 leading-relaxed line-clamp-2">
-                                  {folder.description}
-                                </p>
+                                <button
+                                  type="button"
+                                  onClick={handleOpenCreatePersonalFolder}
+                                  className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-pink-500 to-indigo-600 hover:from-pink-400 hover:to-indigo-500 text-xs font-bold text-white flex items-center gap-1.5 shadow-lg shadow-pink-500/20 transition"
+                                >
+                                  <FolderPlus size={14} />
+                                  <span>+ สร้างโฟลเดอร์ส่วนตัวใหม่</span>
+                                </button>
                               </div>
 
-                              {/* ตัวอย่างลิงก์ย่อยในโฟลเดอร์ */}
-                              <div className="pt-2.5 border-t border-white/10 space-y-1">
-                                {folder.links.slice(0, 3).map((sample) => (
-                                  <div
-                                    key={sample.id}
-                                    className="flex items-center gap-1.5 text-[11px] text-slate-400 truncate"
-                                  >
-                                    <span
-                                      className="w-1.5 h-1.5 rounded-full shrink-0"
-                                      style={{ backgroundColor: folder.color }}
-                                    />
-                                    <span className="truncate">{sample.title}</span>
-                                  </div>
-                                ))}
-                                {folder.links.length > 3 && (
-                                  <p className="text-[10px] text-sky-400 font-medium pt-0.5">
-                                    + ดูอีก {folder.links.length - 3} ลิงก์พร้อมคำอธิบาย...
-                                  </p>
-                                )}
+                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                {personalFolders.map((pFolder) => {
+                                  const noteCount = notesCountMap[pFolder.id] || 0;
+                                  return (
+                                    <div
+                                      key={pFolder.id}
+                                      onClick={() => {
+                                        setSelectedFolderId(pFolder.id);
+                                        setInFolderSearch('');
+                                        setSelectedTopicFilter('all');
+                                      }}
+                                      className="group relative rounded-2xl bg-slate-900/90 hover:bg-slate-800/95 border border-pink-400/30 hover:border-pink-400/70 p-4 cursor-pointer transition-all hover:-translate-y-0.5 shadow-lg flex flex-col justify-between gap-3"
+                                    >
+                                      <div>
+                                        <div className="flex items-start justify-between gap-2">
+                                          <div className="flex items-center gap-3 min-w-0">
+                                            <div
+                                              className="w-11 h-11 rounded-2xl flex items-center justify-center text-white shadow-md shrink-0"
+                                              style={{
+                                                background: `linear-gradient(135deg, ${pFolder.color} 0%, #1e293b 100%)`,
+                                              }}
+                                            >
+                                              <Star size={20} className="fill-white/90" />
+                                            </div>
+                                            <div className="min-w-0">
+                                              <h4 className="text-sm font-bold text-white group-hover:text-pink-300 truncate">
+                                                {pFolder.name}
+                                              </h4>
+                                              <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                                                <span className="text-[11px] font-semibold text-pink-300">
+                                                  {pFolder.links.length} ลิงก์
+                                                </span>
+                                                <span className="text-slate-600">•</span>
+                                                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-300">
+                                                  <StickyNote size={11} />
+                                                  {noteCount} โน้ต
+                                                </span>
+                                              </div>
+                                            </div>
+                                          </div>
+
+                                          <div className="flex items-center gap-1 shrink-0">
+                                            <button
+                                              type="button"
+                                              onClick={(e) =>
+                                                handleOpenEditPersonalFolder(pFolder, e)
+                                              }
+                                              className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition"
+                                              title="แก้ไขชื่อ/สีโฟลเดอร์ส่วนตัว"
+                                            >
+                                              <Pencil size={12} />
+                                            </button>
+                                            {personalFolders.length > 1 && (
+                                              <button
+                                                type="button"
+                                                onClick={(e) =>
+                                                  handleDeletePersonalFolder(pFolder, e)
+                                                }
+                                                className="p-1.5 rounded-lg bg-white/10 hover:bg-rose-500/30 text-rose-300 transition"
+                                                title="ลบโฟลเดอร์ส่วนตัว"
+                                              >
+                                                <Trash2 size={12} />
+                                              </button>
+                                            )}
+                                          </div>
+                                        </div>
+
+                                        <p className="mt-2 text-xs text-slate-300 leading-relaxed line-clamp-2">
+                                          {pFolder.description}
+                                        </p>
+                                      </div>
+
+                                      <div className="pt-2 border-t border-white/10 flex items-center justify-between text-[11px]">
+                                        <span className="text-slate-400 truncate">
+                                          {pFolder.links.length > 0
+                                            ? `ลิงก์ล่าสุด: ${pFolder.links[0].title}`
+                                            : 'คลิกเพื่อเพิ่มลิงก์หรือจดโน้ตส่วนตัว'}
+                                        </span>
+                                        <span className="text-pink-300 font-semibold shrink-0 ml-2">
+                                          เปิดโฟลเดอร์ →
+                                        </span>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
                               </div>
                             </div>
-                          ))}
-                        </div>
+                          )}
+
+                          {/* ===============================================================
+                              หมวดที่ 2: กริดแสดงโฟลเดอร์แยกตามแผ่นงาน (1 แผ่นงาน = 1 โฟลเดอร์)
+                             =============================================================== */}
+                          {visibleFolders.length > 0 && (
+                            <div className="space-y-3">
+                              <div className="flex items-center justify-between px-1">
+                                <h3 className="text-xs sm:text-sm font-bold text-sky-300 flex items-center gap-2">
+                                  <FolderOpen size={16} />
+                                  <span>
+                                    โฟลเดอร์แผ่นงานกลาง ({visibleFolders.length} แผ่นงาน • สามารถเพิ่มโน้ตในทุกโฟลเดอร์ได้)
+                                  </span>
+                                </h3>
+                              </div>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                                {visibleFolders.map((folder) => {
+                                  const noteCount = notesCountMap[folder.id] || 0;
+                                  return (
+                                    <div
+                                      key={folder.id}
+                                      onClick={() => {
+                                        setSelectedFolderId(folder.id);
+                                        setInFolderSearch('');
+                                        setSelectedTopicFilter('all');
+                                      }}
+                                      className="group relative rounded-2xl bg-slate-950/75 hover:bg-slate-800/85 border border-white/12 hover:border-sky-400/50 p-4 cursor-pointer transition-all hover:-translate-y-0.5 shadow-lg flex flex-col justify-between gap-3"
+                                    >
+                                      <div>
+                                        <div className="flex items-start justify-between gap-2.5">
+                                          <div className="flex items-center gap-3 min-w-0">
+                                            <div
+                                              className="w-11 h-11 rounded-2xl flex items-center justify-center text-white shadow-md shrink-0"
+                                              style={{
+                                                background: `linear-gradient(135deg, ${folder.color} 0%, #1e293b 100%)`,
+                                              }}
+                                            >
+                                              <Folder size={22} />
+                                            </div>
+                                            <div className="min-w-0">
+                                              <div className="flex items-center gap-1.5">
+                                                <h3 className="text-sm font-bold text-white group-hover:text-sky-300 truncate">
+                                                  {folder.sheetName}
+                                                </h3>
+                                              </div>
+                                              <div className="flex flex-wrap items-center gap-1.5">
+                                                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-sky-400">
+                                                  {folder.links.length} ลิงก์
+                                                </span>
+                                                {noteCount > 0 && (
+                                                  <span className="px-1.5 py-0.5 rounded-md bg-amber-500/20 border border-amber-400/30 text-[10px] font-bold text-amber-300 flex items-center gap-1">
+                                                    <StickyNote size={10} /> {noteCount} โน้ต
+                                                  </span>
+                                                )}
+                                              </div>
+                                            </div>
+                                          </div>
+
+                                          <span className="px-2 py-0.5 rounded-full bg-white/10 text-[10px] font-medium text-slate-300 shrink-0">
+                                            เปิดโฟลเดอร์ →
+                                          </span>
+                                        </div>
+
+                                        <p className="mt-2.5 text-xs text-slate-300 leading-relaxed line-clamp-2">
+                                          {folder.description}
+                                        </p>
+                                      </div>
+
+                                      {/* ตัวอย่างลิงก์ย่อยในโฟลเดอร์ */}
+                                      <div className="pt-2.5 border-t border-white/10 space-y-1">
+                                        {folder.links.slice(0, 3).map((sample) => (
+                                          <div
+                                            key={sample.id}
+                                            className="flex items-center gap-1.5 text-[11px] text-slate-400 truncate"
+                                          >
+                                            <span
+                                              className="w-1.5 h-1.5 rounded-full shrink-0"
+                                              style={{ backgroundColor: folder.color }}
+                                            />
+                                            <span className="truncate">{sample.title}</span>
+                                          </div>
+                                        ))}
+                                        {folder.links.length > 3 && (
+                                          <p className="text-[10px] text-sky-400 font-medium pt-0.5">
+                                            + ดูอีก {folder.links.length - 3} ลิงก์ & สมุดโน้ตในโฟลเดอร์...
+                                          </p>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+                        </>
                       )}
                     </div>
                   ) : (
                     /* =====================================================================
-                        มุมมองภายในโฟลเดอร์แผ่นงานที่เลือก (แสดงตาราง 2 คอลัมน์: ลิงก์ + คำอธิบาย)
+                        มุมมองภายในโฟลเดอร์ที่เลือก (รองรับทั้งโฟลเดอร์ส่วนตัว และโฟลเดอร์แผ่นงาน + สมุดโน้ตในโฟลเดอร์)
                        ===================================================================== */
                     <div className="space-y-4 animate-fade-in">
                       {/* แถบหัวโฟลเดอร์ + ปุ่มย้อนกลับ */}
-                      <div className="p-4 rounded-2xl bg-slate-950/90 border border-sky-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div
+                        className={`p-4 rounded-2xl bg-slate-950/90 border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                          isViewingPersonalFolder
+                            ? 'border-pink-500/40'
+                            : 'border-sky-500/30'
+                        }`}
+                      >
                         <div className="flex items-start sm:items-center gap-3">
                           <button
                             type="button"
-                            onClick={() => setSelectedFolderId(null)}
+                            onClick={() => {
+                              setSelectedFolderId(null);
+                              setIsPersonalLinkFormOpen(false);
+                            }}
                             className="px-3 py-2 rounded-xl bg-white/10 hover:bg-sky-600 text-xs font-bold text-white flex items-center gap-1.5 transition shrink-0"
                           >
                             <ArrowLeft size={15} />
@@ -726,8 +1324,15 @@ export const EmployeePortalModal: React.FC<EmployeePortalModalProps> = ({
 
                           <div>
                             <div className="flex flex-wrap items-center gap-2">
+                              {isViewingPersonalFolder && (
+                                <span className="px-2 py-0.5 rounded-full bg-pink-500/20 border border-pink-400/30 text-[10px] font-bold text-pink-300 flex items-center gap-1">
+                                  <Lock size={10} /> โฟลเดอร์ส่วนตัว ({currentEmployee.code})
+                                </span>
+                              )}
                               <h3 className="text-base sm:text-lg font-bold text-white">
-                                โฟลเดอร์แผ่นงาน: {activeFolder.sheetName}
+                                {isViewingPersonalFolder
+                                  ? activeFolder.sheetName
+                                  : `โฟลเดอร์แผ่นงาน: ${activeFolder.sheetName}`}
                               </h3>
                               <span className="px-2.5 py-0.5 rounded-full bg-sky-500/20 border border-sky-400/30 text-xs font-bold text-sky-300">
                                 {filteredFolderLinks.length} ลิงก์
@@ -739,17 +1344,163 @@ export const EmployeePortalModal: React.FC<EmployeePortalModalProps> = ({
                           </div>
                         </div>
 
-                        <a
-                          href={getEmployeeLinksSheetUrl(activeFolder.gid)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-400/30 text-xs font-semibold text-emerald-300 shrink-0 transition"
-                        >
-                          <FileSpreadsheet size={14} />
-                          <span>เปิดแผ่นงาน Google Sheet ต้นฉบับ</span>
-                          <ExternalLink size={12} />
-                        </a>
+                        <div className="flex flex-wrap items-center gap-2 shrink-0">
+                          {isViewingPersonalFolder ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={handleOpenAddPersonalLink}
+                                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-pink-500 to-indigo-600 hover:from-pink-400 hover:to-indigo-500 text-xs font-bold text-white shadow transition"
+                              >
+                                <Plus size={14} />
+                                <span>เพิ่มลิงก์ส่วนตัวลงโฟลเดอร์นี้</span>
+                              </button>
+                              {activePersonalFolder && (
+                                <button
+                                  type="button"
+                                  onClick={(e) =>
+                                    handleOpenEditPersonalFolder(activePersonalFolder, e)
+                                  }
+                                  className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-semibold text-slate-200 flex items-center gap-1.5 transition"
+                                >
+                                  <Pencil size={13} />
+                                  <span>ตั้งค่าโฟลเดอร์</span>
+                                </button>
+                              )}
+                            </>
+                          ) : (
+                            <a
+                              href={getEmployeeLinksSheetUrl(activeFolder.gid)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-400/30 text-xs font-semibold text-emerald-300 shrink-0 transition"
+                            >
+                              <FileSpreadsheet size={14} />
+                              <span>เปิดแผ่นงาน Google Sheet ต้นฉบับ</span>
+                              <ExternalLink size={12} />
+                            </a>
+                          )}
+                        </div>
                       </div>
+
+                      {/* ===============================================================
+                          สมุดโน้ตประจำโฟลเดอร์ (แสดงในทุกโฟลเดอร์ ทั้งส่วนตัวและ 17 แผ่นงาน)
+                         =============================================================== */}
+                      <FolderNotesSection
+                        folderId={activeFolder.id}
+                        folderName={activeFolder.sheetName}
+                        employeeCode={currentEmployee.code}
+                        authorName={`${currentEmployee.firstName} (${currentEmployee.code})`}
+                        isPersonalFolder={isViewingPersonalFolder}
+                        onNotesChanged={() => {
+                          setNotesCountMap(getFolderNotesCountMap(currentEmployee.code));
+                          onWorkspaceChanged?.();
+                        }}
+                      />
+
+                      {/* ฟอร์มเพิ่ม/แก้ไขลิงก์ส่วนตัว (เฉพาะเมื่ออยู่ในโฟลเดอร์ส่วนตัวของพนักงาน) */}
+                      {isViewingPersonalFolder && isPersonalLinkFormOpen && (
+                        <form
+                          onSubmit={handleSavePersonalLink}
+                          className="p-4 rounded-2xl bg-slate-950 border-2 border-pink-500/40 space-y-3 animate-fade-in"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-pink-300 flex items-center gap-1.5">
+                              <Plus size={14} />
+                              <span>
+                                {editingPersonalLinkId
+                                  ? 'แก้ไขลิงก์ในโฟลเดอร์ส่วนตัว'
+                                  : `เพิ่มลิงก์ใหม่ลงใน "${activeFolder.sheetName}"`}
+                              </span>
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsPersonalLinkFormOpen(false);
+                                setEditingPersonalLinkId(null);
+                              }}
+                              className="p-1 rounded-lg bg-white/10 hover:bg-white/20 text-slate-300"
+                            >
+                              <X size={14} />
+                            </button>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+                            <div className="sm:col-span-5">
+                              <label className="block text-[11px] font-medium text-slate-300 mb-1">
+                                ชื่อลิงก์ / ชื่อระบบ *
+                              </label>
+                              <input
+                                type="text"
+                                required
+                                value={linkTitleInput}
+                                onChange={(e) => setLinkTitleInput(e.target.value)}
+                                placeholder="เช่น ตารางส่งงานสาขา, รายงานประจำวัน..."
+                                className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-white/15 focus:border-pink-400 text-xs sm:text-sm text-white focus:outline-none"
+                              />
+                            </div>
+
+                            <div className="sm:col-span-5">
+                              <label className="block text-[11px] font-medium text-slate-300 mb-1">
+                                URL เว็บไซต์ / Google Sheet *
+                              </label>
+                              <input
+                                type="text"
+                                required
+                                value={linkUrlInput}
+                                onChange={(e) => setLinkUrlInput(e.target.value)}
+                                placeholder="https://docs.google.com/spreadsheets/..."
+                                className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-white/15 focus:border-pink-400 text-xs sm:text-sm text-white font-mono focus:outline-none"
+                              />
+                            </div>
+
+                            <div className="sm:col-span-2">
+                              <label className="block text-[11px] font-medium text-slate-300 mb-1">
+                                หมวดย่อย / ป้าย
+                              </label>
+                              <input
+                                type="text"
+                                value={linkTopicInput}
+                                onChange={(e) => setLinkTopicInput(e.target.value)}
+                                placeholder="เช่น งานเช้า"
+                                className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-white/15 focus:border-pink-400 text-xs sm:text-sm text-white focus:outline-none"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-[11px] font-medium text-slate-300 mb-1">
+                              คำอธิบายการใช้งาน / หมายเหตุเตือนความจำของลิงก์นี้
+                            </label>
+                            <input
+                              type="text"
+                              value={linkDescInput}
+                              onChange={(e) => setLinkDescInput(e.target.value)}
+                              placeholder="เช่น อัปเดตตัวเลขทุกวันก่อน 10:00 น."
+                              className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-white/15 focus:border-pink-400 text-xs sm:text-sm text-white focus:outline-none"
+                            />
+                          </div>
+
+                          <div className="flex justify-end gap-2 pt-1">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsPersonalLinkFormOpen(false);
+                                setEditingPersonalLinkId(null);
+                              }}
+                              className="px-3.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs text-slate-300"
+                            >
+                              ยกเลิก
+                            </button>
+                            <button
+                              type="submit"
+                              className="px-4 py-1.5 rounded-xl bg-gradient-to-r from-pink-500 to-indigo-600 hover:from-pink-400 hover:to-indigo-500 text-xs font-bold text-white shadow"
+                            >
+                              {editingPersonalLinkId ? 'บันทึกการแก้ไขลิงก์' : 'บันทึกลิงก์ลงโฟลเดอร์'}
+                            </button>
+                          </div>
+                        </form>
+                      )}
 
                       {/* ช่องค้นหาในโฟลเดอร์ + ตัวกรองหัวข้อ */}
                       <div className="space-y-2.5">
@@ -818,72 +1569,137 @@ export const EmployeePortalModal: React.FC<EmployeePortalModalProps> = ({
                       </div>
 
                       {/* รายการลิงก์ในโฟลเดอร์พร้อมคำอธิบาย */}
-                      <div className="space-y-2.5">
-                        {filteredFolderLinks.map((item) => (
-                          <div
-                            key={item.id}
-                            onClick={() =>
-                              window.open(item.url, '_blank', 'noopener,noreferrer')
-                            }
-                            className="group grid grid-cols-12 gap-3 items-center p-3.5 rounded-2xl bg-slate-950/75 hover:bg-slate-800/90 border border-white/10 hover:border-sky-400/50 cursor-pointer transition-all shadow-md"
-                          >
-                            {/* คอลัมน์ที่ 1: ไอคอน + ป้ายหัวข้อ + ชื่อลิงก์ */}
-                            <div className="col-span-12 sm:col-span-5 flex items-center gap-3 min-w-0 sm:border-r sm:border-white/10 sm:pr-3">
-                              <div className="shrink-0 transition-transform group-hover:scale-105">
-                                <IconRenderer
-                                  iconType="library"
-                                  iconName={item.iconName}
-                                  iconUrl=""
-                                  linkUrl={item.url}
-                                  imageFit="cover"
-                                  bgStyle={item.bgStyle}
-                                  iconColor="#ffffff"
-                                  shape={iconShape}
-                                  size="sm"
-                                  badgeText={item.badge}
-                                />
-                              </div>
-
-                              <div className="min-w-0">
-                                <div className="flex flex-wrap items-center gap-1.5 mb-0.5">
-                                  {item.codeOrTopic && (
-                                    <span className="px-2 py-0.5 rounded-md bg-sky-500/20 border border-sky-400/30 text-sky-300 text-[10px] font-bold">
-                                      {item.codeOrTopic}
-                                    </span>
-                                  )}
-                                  {item.badge && (
-                                    <span className="px-1.5 py-0.5 rounded bg-white/10 text-slate-300 text-[10px] font-medium">
-                                      {item.badge}
-                                    </span>
-                                  )}
+                      {filteredFolderLinks.length === 0 ? (
+                        <div className="p-8 rounded-2xl bg-slate-950/60 border border-dashed border-white/15 text-center space-y-3">
+                          <p className="text-xs sm:text-sm text-slate-300 font-medium">
+                            {isViewingPersonalFolder
+                              ? 'ยังไม่มีลิงก์ในโฟลเดอร์ส่วนตัวนี้'
+                              : 'ไม่พบลิงก์ที่ตรงกับตัวกรอง'}
+                          </p>
+                          {isViewingPersonalFolder && (
+                            <div className="flex flex-wrap items-center justify-center gap-2">
+                              <button
+                                type="button"
+                                onClick={handleOpenAddPersonalLink}
+                                className="px-4 py-2 rounded-xl bg-gradient-to-r from-pink-500 to-indigo-600 text-xs font-bold text-white flex items-center gap-1.5 shadow"
+                              >
+                                <Plus size={14} />
+                                <span>เพิ่มลิงก์ส่วนตัวรายการแรก</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setSelectedFolderId(null)}
+                                className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-xs text-slate-300"
+                              >
+                                หรือเลือกเก็บลิงก์จาก 17 แผ่นงาน
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="space-y-2.5">
+                          {filteredFolderLinks.map((item) => (
+                            <div
+                              key={item.id}
+                              onClick={() =>
+                                window.open(item.url, '_blank', 'noopener,noreferrer')
+                              }
+                              className="group grid grid-cols-12 gap-3 items-center p-3.5 rounded-2xl bg-slate-950/75 hover:bg-slate-800/90 border border-white/10 hover:border-sky-400/50 cursor-pointer transition-all shadow-md"
+                            >
+                              {/* คอลัมน์ที่ 1: ไอคอน + ป้ายหัวข้อ + ชื่อลิงก์ */}
+                              <div className="col-span-12 sm:col-span-5 flex items-center gap-3 min-w-0 sm:border-r sm:border-white/10 sm:pr-3">
+                                <div className="shrink-0 transition-transform group-hover:scale-105">
+                                  <IconRenderer
+                                    iconType="library"
+                                    iconName={item.iconName}
+                                    iconUrl=""
+                                    linkUrl={item.url}
+                                    imageFit="cover"
+                                    bgStyle={item.bgStyle}
+                                    iconColor="#ffffff"
+                                    shape={iconShape}
+                                    size="sm"
+                                    badgeText={item.badge}
+                                  />
                                 </div>
-                                <p className="text-xs sm:text-sm font-bold text-white group-hover:text-sky-300 leading-snug">
-                                  {item.title}
-                                </p>
-                                <span className="inline-flex items-center gap-1 text-[10px] text-sky-400 mt-0.5">
-                                  คลิกเปิดลิงก์ <ExternalLink size={10} />
-                                </span>
-                              </div>
-                            </div>
 
-                            {/* คอลัมน์ที่ 2: คำอธิบายและหมายเหตุจากแผ่นงาน */}
-                            <div className="col-span-12 sm:col-span-7 flex items-center justify-between gap-3 sm:pl-1 min-w-0">
-                              <div className="min-w-0">
-                                <p className="text-xs sm:text-sm text-slate-200 leading-relaxed">
-                                  {item.description}
-                                </p>
-                                <p className="text-[10px] font-mono text-slate-500 truncate mt-1">
-                                  {item.url}
-                                </p>
+                                <div className="min-w-0">
+                                  <div className="flex flex-wrap items-center gap-1.5 mb-0.5">
+                                    {item.codeOrTopic && (
+                                      <span className="px-2 py-0.5 rounded-md bg-sky-500/20 border border-sky-400/30 text-sky-300 text-[10px] font-bold">
+                                        {item.codeOrTopic}
+                                      </span>
+                                    )}
+                                    {item.badge && (
+                                      <span className="px-1.5 py-0.5 rounded bg-white/10 text-slate-300 text-[10px] font-medium">
+                                        {item.badge}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-xs sm:text-sm font-bold text-white group-hover:text-sky-300 leading-snug">
+                                    {item.title}
+                                  </p>
+                                  <span className="inline-flex items-center gap-1 text-[10px] text-sky-400 mt-0.5">
+                                    คลิกเปิดลิงก์ <ExternalLink size={10} />
+                                  </span>
+                                </div>
                               </div>
-                              <ExternalLink
-                                size={16}
-                                className="text-slate-500 group-hover:text-sky-300 shrink-0"
-                              />
+
+                              {/* คอลัมน์ที่ 2: คำอธิบายและปุ่มเก็บเข้าส่วนตัว / แก้ไขลิงก์ส่วนตัว */}
+                              <div className="col-span-12 sm:col-span-7 flex items-center justify-between gap-3 sm:pl-1 min-w-0">
+                                <div className="min-w-0">
+                                  <p className="text-xs sm:text-sm text-slate-200 leading-relaxed">
+                                    {item.description}
+                                  </p>
+                                  <p className="text-[10px] font-mono text-slate-500 truncate mt-1">
+                                    {item.url}
+                                  </p>
+                                </div>
+
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  {isViewingPersonalFolder ? (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => handleOpenEditPersonalLink(item, e)}
+                                        className="p-2 rounded-xl bg-white/10 hover:bg-indigo-500/30 text-slate-200 hover:text-white transition"
+                                        title="แก้ไขลิงก์ส่วนตัว"
+                                      >
+                                        <Pencil size={13} />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => handleRemovePersonalLink(item, e)}
+                                        className="p-2 rounded-xl bg-white/10 hover:bg-rose-500/30 text-rose-300 transition"
+                                        title="ลบลิงก์ออกจากโฟลเดอร์ส่วนตัว"
+                                      >
+                                        <Trash2 size={13} />
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={(e) =>
+                                        handleBookmarkLinkToPersonal(item, undefined, e)
+                                      }
+                                      className="px-2.5 py-1.5 rounded-xl bg-pink-500/15 hover:bg-pink-500/30 border border-pink-400/30 text-[11px] font-semibold text-pink-200 flex items-center gap-1 transition"
+                                      title="เก็บลิงก์นี้ไว้ในโฟลเดอร์ส่วนตัวของฉัน"
+                                    >
+                                      <BookmarkPlus size={13} />
+                                      <span className="hidden md:inline">เก็บเข้าส่วนตัว</span>
+                                    </button>
+                                  )}
+
+                                  <ExternalLink
+                                    size={16}
+                                    className="text-slate-500 group-hover:text-sky-300 shrink-0 ml-1"
+                                  />
+                                </div>
+                              </div>
                             </div>
-                          </div>
-                        ))}
-                      </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
                 </>
@@ -1103,8 +1919,8 @@ export const EmployeePortalModal: React.FC<EmployeePortalModalProps> = ({
                   }`}
                 />
                 <span>
-                  ปลดล็อก 17 โฟลเดอร์พนักงาน ({totalLinksCount} ลิงก์) • พนักงาน{' '}
-                  {employees.length} คน
+                  โฟลเดอร์ส่วนตัว {personalFolders.length} โฟลเดอร์ • แผ่นงานกลาง 17 โฟลเดอร์ (
+                  {totalLinksCount} ลิงก์)
                 </span>
               </div>
 

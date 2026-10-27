@@ -102,3 +102,31 @@ export interface EmployeeScheduleItem {
   frequency: 'ประจำวัน' | 'ประจำเดือน' | string;
   actionNote: string;
 }
+
+export type FolderNoteColor = 'amber' | 'sky' | 'emerald' | 'rose' | 'violet';
+
+export interface FolderNoteItem {
+  id: string;
+  folderId: string;
+  employeeCode: string; // รหัสพนักงานเจ้าของโน้ต หรือ 'admin'
+  authorName: string;   // ชื่อผู้บันทึกโน้ต
+  title: string;        // หัวข้อโน้ต
+  content: string;      // รายละเอียดบันทึกช่วยจำ
+  color: FolderNoteColor;
+  isPinned?: boolean;
+  isShared?: boolean;   // true = แชร์ในโฟลเดอร์ให้พนักงานคนอื่นเห็นด้วย, false = เห็นเฉพาะเจ้าของรหัสพนักงาน
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface EmployeePersonalFolder {
+  id: string;
+  employeeCode: string; // รหัสพนักงานเจ้าของโฟลเดอร์ เช่น 171785
+  name: string;         // ชื่อโฟลเดอร์ส่วนตัว
+  description: string;  // คำอธิบายโฟลเดอร์
+  color: string;        // สีประจำโฟลเดอร์
+  iconName: string;     // ชื่อไอคอน
+  links: EmployeeLinkItem[];
+  createdAt: string;
+  updatedAt: string;
+}

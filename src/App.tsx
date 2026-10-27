@@ -15,7 +15,14 @@ import {
   rectSortingStrategy,
   sortableKeyboardCoordinates,
 } from '@dnd-kit/sortable';
-import { AppLink, AppSettings, Category, EmployeeProfile, FolderLayout } from './types/app';
+import {
+  AppLink,
+  AppSettings,
+  Category,
+  EmployeePersonalFolder,
+  EmployeeProfile,
+  FolderLayout,
+} from './types/app';
 import { DEFAULT_CATEGORIES, DEFAULT_SETTINGS, WALLPAPER_PRESETS } from './constants/wallpapers';
 import {
   fetchAllHubData,
@@ -38,7 +45,12 @@ import {
   syncEmployeesFromGoogleSheet,
   calculateWorkTenure,
 } from './services/employeeService';
-import { getEmployeeFolders } from './services/employeeLinksService';
+import {
+  getEmployeeFolders,
+  getFolderNotesCountMap,
+  getPersonalFoldersForEmployee,
+  syncEmployeeWorkspaceFromCloud,
+} from './services/employeeLinksService';
 import { AppIconCard } from './components/AppIconCard';
 import { getSupabaseClient } from './lib/supabase';
 import { DockBar } from './components/DockBar';
@@ -60,6 +72,7 @@ import {
   LayoutGrid,
   LayoutDashboard,
   Folder,
+  FolderPlus,
   Rows3,
   ExternalLink,
   Pencil,
@@ -78,6 +91,8 @@ import {
   LogOut,
   FolderOpen,
   History,
+  Star,
+  StickyNote,
 } from 'lucide-react';
 
 export function App() {
@@ -119,6 +134,30 @@ export function App() {
   const [isLiveEmployeeSheet, setIsLiveEmployeeSheet] = useState(false);
 
   const employeeFolders = getEmployeeFolders();
+  const [personalFolders, setPersonalFolders] = useState<EmployeePersonalFolder[]>(() =>
+    currentEmployee ? getPersonalFoldersForEmployee(currentEmployee.code) : []
+  );
+  const [notesCountMap, setNotesCountMap] = useState<Record<string, number>>(() =>
+    getFolderNotesCountMap(currentEmployee?.code || 'public')
+  );
+
+  const refreshEmployeeWorkspaceState = useCallback(async (empCode?: string) => {
+    const code = empCode ?? currentEmployee?.code;
+    if (code) {
+      setPersonalFolders(getPersonalFoldersForEmployee(code));
+      setNotesCountMap(getFolderNotesCountMap(code));
+      const synced = await syncEmployeeWorkspaceFromCloud(code);
+      setPersonalFolders(synced.personalFolders);
+      setNotesCountMap(getFolderNotesCountMap(code));
+    } else {
+      setPersonalFolders([]);
+      setNotesCountMap(getFolderNotesCountMap('public'));
+    }
+  }, [currentEmployee?.code]);
+
+  useEffect(() => {
+    refreshEmployeeWorkspaceState(currentEmployee?.code);
+  }, [currentEmployee?.code, refreshEmployeeWorkspaceState]);
 
   // Clock for Mobile Status Bar
   const [now, setNow] = useState(new Date());
@@ -1250,128 +1289,273 @@ export function App() {
           </div>
         )}
 
-        {/* โฟลเดอร์ลิงก์เฉพาะพนักงาน (แสดงเฉพาะเมื่อล็อกอินรหัสพนักงานแล้วเท่านั้น - แผ่นงานละ 1 โฟลเดอร์) */}
+        {/* โฟลเดอร์ส่วนตัวของพนักงานแต่ละคน + โฟลเดอร์ลิงก์เฉพาะพนักงาน 17 แผ่นงาน (แสดงเฉพาะเมื่อล็อกอินรหัสพนักงานแล้วเท่านั้น) */}
         {currentEmployee && (
           <div
-            className={`mb-6 p-4 sm:p-5 rounded-3xl backdrop-blur-2xl border shadow-xl transition-colors ${
+            className={`mb-6 p-4 sm:p-5 rounded-3xl backdrop-blur-2xl border shadow-xl transition-colors space-y-5 ${
               isLightTheme
                 ? 'bg-white/85 border-sky-200/90 text-slate-800 shadow-sky-900/5'
                 : 'bg-slate-950/60 border-sky-400/25 text-white'
             }`}
           >
-            <div className="flex flex-wrap items-center justify-between gap-2 mb-3.5">
-              <div>
-                <div className="flex items-center gap-2">
-                  <FolderOpen size={18} className="text-sky-500" />
-                  <h3 className="text-sm sm:text-base font-bold">
-                    โฟลเดอร์ลิงก์เฉพาะพนักงาน (แยกตามแผ่นงาน)
-                  </h3>
-                  <span
-                    className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
-                      isLightTheme
-                        ? 'bg-sky-100 border-sky-300 text-sky-800'
-                        : 'bg-sky-500/20 border-sky-400/30 text-sky-300'
+            {/* ส่วนที่ 1: โฟลเดอร์ส่วนตัวของพนักงานแต่ละคน */}
+            <div
+              className={`p-4 rounded-2xl border space-y-3 ${
+                isLightTheme
+                  ? 'bg-gradient-to-r from-pink-50/90 via-white to-sky-50/90 border-pink-200'
+                  : 'bg-gradient-to-r from-pink-950/35 via-slate-900/90 to-indigo-950/40 border-pink-400/30'
+              }`}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Star size={17} className="text-pink-500 fill-pink-500" />
+                    <h3 className="text-sm sm:text-base font-bold">
+                      โฟลเดอร์ส่วนตัวของ {currentEmployee.firstName} (รหัส {currentEmployee.code})
+                    </h3>
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                        isLightTheme
+                          ? 'bg-pink-100 border-pink-300 text-pink-800'
+                          : 'bg-pink-500/20 border-pink-400/30 text-pink-200'
+                      }`}
+                    >
+                      ส่วนตัวเฉพาะคุณ • เพิ่มลิงก์ & สมุดโน้ตได้
+                    </span>
+                  </div>
+                  <p
+                    className={`text-xs mt-0.5 ${
+                      isLightTheme ? 'text-slate-600' : 'text-slate-300'
                     }`}
                   >
-                    17 โฟลเดอร์ • 581 ลิงก์พร้อมคำอธิบาย
-                  </span>
+                    คลิกเปิดโฟลเดอร์ส่วนตัวเพื่อเพิ่มลิงก์ที่ใช้บ่อย หรือจดโน้ตบันทึกช่วยจำในโฟลเดอร์
+                  </p>
                 </div>
-                <p
-                  className={`text-xs mt-0.5 ${
-                    isLightTheme ? 'text-slate-600' : 'text-slate-300'
-                  }`}
-                >
-                  คลิกที่โฟลเดอร์แผ่นงานเพื่อดูลิงก์และคำอธิบายการใช้งานแบบตาราง 2 คอลัมน์
-                </p>
-              </div>
 
-              <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => setShowArchiveEmployeeFolders((prev) => !prev)}
-                  className={`px-3 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition ${
-                    showArchiveEmployeeFolders
-                      ? 'bg-sky-600 border-sky-500 text-white'
-                      : isLightTheme
-                      ? 'bg-slate-100 hover:bg-sky-50 border-slate-200 text-slate-700'
-                      : 'bg-white/10 hover:bg-white/15 border-white/15 text-slate-200'
-                  }`}
+                  onClick={() => {
+                    setSelectedEmployeeFolderId('__create_personal__');
+                    setIsEmployeePortalOpen(true);
+                  }}
+                  className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-pink-500 to-indigo-600 hover:from-pink-400 hover:to-indigo-500 text-xs font-bold text-white flex items-center gap-1.5 shadow transition"
                 >
-                  <History size={13} />
-                  <span>
-                    {showArchiveEmployeeFolders
-                      ? 'ซ่อนปีย้อนหลัง (64-68)'
-                      : 'ดูปีย้อนหลัง 64-68 (+5 โฟลเดอร์)'}
-                  </span>
+                  <FolderPlus size={14} />
+                  <span>+ สร้างโฟลเดอร์ส่วนตัวใหม่</span>
                 </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {personalFolders.map((pFolder) => {
+                  const noteCount = notesCountMap[pFolder.id] || 0;
+                  return (
+                    <div
+                      key={pFolder.id}
+                      onClick={() => {
+                        setSelectedEmployeeFolderId(pFolder.id);
+                        setIsEmployeePortalOpen(true);
+                      }}
+                      className={`group p-3.5 rounded-2xl border cursor-pointer transition-all hover:-translate-y-0.5 flex flex-col justify-between gap-2 ${
+                        isLightTheme
+                          ? 'bg-white hover:bg-pink-50/50 border-pink-200 hover:border-pink-400 shadow-sm'
+                          : 'bg-slate-950/85 hover:bg-slate-900 border-pink-400/30 hover:border-pink-400/60'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2.5">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div
+                            className="w-10 h-10 rounded-xl flex items-center justify-center text-white shadow shrink-0"
+                            style={{
+                              background: `linear-gradient(135deg, ${pFolder.color} 0%, #1e293b 100%)`,
+                            }}
+                          >
+                            <Star size={18} className="fill-white/90" />
+                          </div>
+                          <div className="min-w-0">
+                            <h4
+                              className={`text-xs sm:text-sm font-bold truncate ${
+                                isLightTheme
+                                  ? 'text-slate-900 group-hover:text-pink-700'
+                                  : 'text-white group-hover:text-pink-300'
+                              }`}
+                            >
+                              {pFolder.name}
+                            </h4>
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span
+                                className={`text-[11px] font-semibold ${
+                                  isLightTheme ? 'text-pink-700' : 'text-pink-300'
+                                }`}
+                              >
+                                {pFolder.links.length} ลิงก์
+                              </span>
+                              <span className="text-slate-400">•</span>
+                              <span
+                                className={`inline-flex items-center gap-1 text-[11px] font-semibold ${
+                                  isLightTheme ? 'text-amber-700' : 'text-amber-300'
+                                }`}
+                              >
+                                <StickyNote size={11} /> {noteCount} โน้ต
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-semibold shrink-0 ${
+                            isLightTheme
+                              ? 'bg-pink-50 text-pink-700 border border-pink-200'
+                              : 'bg-pink-500/20 text-pink-200'
+                          }`}
+                        >
+                          เปิดดู →
+                        </span>
+                      </div>
+
+                      <p
+                        className={`text-[11px] line-clamp-2 leading-relaxed ${
+                          isLightTheme ? 'text-slate-600' : 'text-slate-300'
+                        }`}
+                      >
+                        {pFolder.description}
+                      </p>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {employeeFolders
-                .filter((f) => (showArchiveEmployeeFolders ? true : !f.isArchive))
-                .map((folder) => (
-                  <div
-                    key={folder.id}
-                    onClick={() => {
-                      setSelectedEmployeeFolderId(folder.id);
-                      setIsEmployeePortalOpen(true);
-                    }}
-                    className={`group p-3.5 rounded-2xl border cursor-pointer transition-all hover:-translate-y-0.5 flex flex-col justify-between gap-2 ${
-                      isLightTheme
-                        ? 'bg-sky-50/70 hover:bg-white border-sky-200/90 hover:border-sky-400 shadow-sm'
-                        : 'bg-slate-900/75 hover:bg-slate-900 border-white/10 hover:border-sky-400/50'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-2.5">
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <div
-                          className="w-10 h-10 rounded-xl flex items-center justify-center text-white shadow shrink-0"
-                          style={{
-                            background: `linear-gradient(135deg, ${folder.color} 0%, #1e293b 100%)`,
-                          }}
-                        >
-                          <Folder size={19} />
-                        </div>
-                        <div className="min-w-0">
-                          <h4
-                            className={`text-xs sm:text-sm font-bold truncate ${
-                              isLightTheme
-                                ? 'text-slate-900 group-hover:text-sky-700'
-                                : 'text-white group-hover:text-sky-300'
-                            }`}
-                          >
-                            {folder.sheetName}
-                          </h4>
-                          <span
-                            className={`text-[11px] font-semibold ${
-                              isLightTheme ? 'text-sky-700' : 'text-sky-400'
-                            }`}
-                          >
-                            {folder.links.length} ลิงก์พร้อมคำอธิบาย
-                          </span>
-                        </div>
-                      </div>
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-semibold shrink-0 ${
-                          isLightTheme
-                            ? 'bg-white text-sky-700 border border-sky-200'
-                            : 'bg-white/10 text-slate-300'
-                        }`}
-                      >
-                        เปิดดู →
-                      </span>
-                    </div>
-
-                    <p
-                      className={`text-[11px] line-clamp-2 leading-relaxed ${
-                        isLightTheme ? 'text-slate-600' : 'text-slate-300'
+            {/* ส่วนที่ 2: โฟลเดอร์ลิงก์เฉพาะพนักงาน 17 แผ่นงาน */}
+            <div>
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-3.5">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <FolderOpen size={18} className="text-sky-500" />
+                    <h3 className="text-sm sm:text-base font-bold">
+                      โฟลเดอร์ลิงก์เฉพาะพนักงาน (แยกตามแผ่นงาน)
+                    </h3>
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                        isLightTheme
+                          ? 'bg-sky-100 border-sky-300 text-sky-800'
+                          : 'bg-sky-500/20 border-sky-400/30 text-sky-300'
                       }`}
                     >
-                      {folder.description}
-                    </p>
+                      17 โฟลเดอร์ • 581 ลิงก์ + สมุดโน้ตในโฟลเดอร์
+                    </span>
                   </div>
-                ))}
+                  <p
+                    className={`text-xs mt-0.5 ${
+                      isLightTheme ? 'text-slate-600' : 'text-slate-300'
+                    }`}
+                  >
+                    คลิกที่โฟลเดอร์แผ่นงานเพื่อดูลิงก์ คำอธิบาย จดโน้ตในโฟลเดอร์ หรือกดเก็บลิงก์เข้าโฟลเดอร์ส่วนตัว
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowArchiveEmployeeFolders((prev) => !prev)}
+                    className={`px-3 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition ${
+                      showArchiveEmployeeFolders
+                        ? 'bg-sky-600 border-sky-500 text-white'
+                        : isLightTheme
+                        ? 'bg-slate-100 hover:bg-sky-50 border-slate-200 text-slate-700'
+                        : 'bg-white/10 hover:bg-white/15 border-white/15 text-slate-200'
+                    }`}
+                  >
+                    <History size={13} />
+                    <span>
+                      {showArchiveEmployeeFolders
+                        ? 'ซ่อนปีย้อนหลัง (64-68)'
+                        : 'ดูปีย้อนหลัง 64-68 (+5 โฟลเดอร์)'}
+                    </span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {employeeFolders
+                  .filter((f) => (showArchiveEmployeeFolders ? true : !f.isArchive))
+                  .map((folder) => {
+                    const noteCount = notesCountMap[folder.id] || 0;
+                    return (
+                      <div
+                        key={folder.id}
+                        onClick={() => {
+                          setSelectedEmployeeFolderId(folder.id);
+                          setIsEmployeePortalOpen(true);
+                        }}
+                        className={`group p-3.5 rounded-2xl border cursor-pointer transition-all hover:-translate-y-0.5 flex flex-col justify-between gap-2 ${
+                          isLightTheme
+                            ? 'bg-sky-50/70 hover:bg-white border-sky-200/90 hover:border-sky-400 shadow-sm'
+                            : 'bg-slate-900/75 hover:bg-slate-900 border-white/10 hover:border-sky-400/50'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2.5">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div
+                              className="w-10 h-10 rounded-xl flex items-center justify-center text-white shadow shrink-0"
+                              style={{
+                                background: `linear-gradient(135deg, ${folder.color} 0%, #1e293b 100%)`,
+                              }}
+                            >
+                              <Folder size={19} />
+                            </div>
+                            <div className="min-w-0">
+                              <h4
+                                className={`text-xs sm:text-sm font-bold truncate ${
+                                  isLightTheme
+                                    ? 'text-slate-900 group-hover:text-sky-700'
+                                    : 'text-white group-hover:text-sky-300'
+                                }`}
+                              >
+                                {folder.sheetName}
+                              </h4>
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <span
+                                  className={`text-[11px] font-semibold ${
+                                    isLightTheme ? 'text-sky-700' : 'text-sky-400'
+                                  }`}
+                                >
+                                  {folder.links.length} ลิงก์
+                                </span>
+                                {noteCount > 0 && (
+                                  <span
+                                    className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold ${
+                                      isLightTheme
+                                        ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                                        : 'bg-amber-500/20 text-amber-300 border border-amber-400/30'
+                                    }`}
+                                  >
+                                    <StickyNote size={10} /> {noteCount} โน้ต
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-semibold shrink-0 ${
+                              isLightTheme
+                                ? 'bg-white text-sky-700 border border-sky-200'
+                                : 'bg-white/10 text-slate-300'
+                            }`}
+                          >
+                            เปิดดู →
+                          </span>
+                        </div>
+
+                        <p
+                          className={`text-[11px] line-clamp-2 leading-relaxed ${
+                            isLightTheme ? 'text-slate-600' : 'text-slate-300'
+                          }`}
+                        >
+                          {folder.description}
+                        </p>
+                      </div>
+                    );
+                  })}
+              </div>
             </div>
           </div>
         )}
@@ -1791,7 +1975,11 @@ export function App() {
         shape={settings.icon_shape}
         defaultLayout={settings.default_folder_layout || 'detail-2col'}
         isEditMode={isEditMode}
-        onClose={() => setOpenedFolderCategory(null)}
+        currentEmployee={currentEmployee}
+        onClose={() => {
+          setOpenedFolderCategory(null);
+          refreshEmployeeWorkspaceState(currentEmployee?.code);
+        }}
         onEditLink={(link) => {
           setOpenedFolderCategory(null);
           openEditLinkModal(link);
@@ -1844,9 +2032,11 @@ export function App() {
         onLoginSuccess={handleEmployeeLogin}
         onLogout={handleEmployeeLogout}
         onRefreshSheet={handleRefreshEmployees}
+        onWorkspaceChanged={() => refreshEmployeeWorkspaceState(currentEmployee?.code)}
         onClose={() => {
           setIsEmployeePortalOpen(false);
           setSelectedEmployeeFolderId(null);
+          refreshEmployeeWorkspaceState(currentEmployee?.code);
         }}
       />
 

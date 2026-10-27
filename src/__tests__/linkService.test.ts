@@ -21,9 +21,17 @@ import {
   calculateWorkTenure,
 } from '../services/employeeService';
 import {
+  addLinkToPersonalFolder,
+  createPersonalFolder,
+  deleteFolderNote,
   getEmployeeFolders,
   getEmployeeScheduleItems,
+  getFolderNotes,
+  getPersonalFoldersForEmployee,
+  removeLinkFromPersonalFolder,
   searchAcrossEmployeeFolders,
+  togglePinFolderNote,
+  upsertFolderNote,
 } from '../services/employeeLinksService';
 
 describe('App Hub Launcher - Link & Icon Studio Service', () => {
@@ -217,5 +225,88 @@ describe('App Hub Launcher - Link & Icon Studio Service', () => {
 
     const searchRes = searchAcrossEmployeeFolders('จัดส่งตรงเวลา', folders);
     expect(searchRes.length).toBeGreaterThan(0);
+  });
+
+  it('supports personal folders per employee and folder notes (both private and shared)', async () => {
+    // 1. พนักงานแต่ละคนมีโฟลเดอร์ส่วนตัวแยกตามรหัสพนักงาน
+    const emp1Folders = getPersonalFoldersForEmployee('171785');
+    expect(emp1Folders.length).toBe(1);
+    expect(emp1Folders[0].employeeCode).toBe('171785');
+
+    const afterCreate = await createPersonalFolder('171785', {
+      name: 'งานส่งรายงานสาขาบางพลี',
+      description: 'ลิงก์ที่ใช้ส่งงานทุกเช้า',
+      color: '#0ea5e9',
+    });
+    expect(afterCreate.length).toBe(2);
+
+    // พนักงานอีกคน (110208) ต้องไม่เห็นโฟลเดอร์ส่วนตัวของ 171785
+    const emp2Folders = getPersonalFoldersForEmployee('110208');
+    expect(emp2Folders.length).toBe(1);
+    expect(emp2Folders.some((f) => f.name === 'งานส่งรายงานสาขาบางพลี')).toBe(false);
+
+    // 2. เพิ่มและลบลิงก์ในโฟลเดอร์ส่วนตัวของพนักงาน
+    const targetFolderId = afterCreate[1].id;
+    const withLink = await addLinkToPersonalFolder('171785', targetFolderId, {
+      title: 'ชีตสรุปงานประจำวันบางพลี',
+      url: 'https://docs.google.com/spreadsheets/d/test-bangplee',
+      codeOrTopic: 'งานเช้า',
+      description: 'อัปเดตก่อน 10:00 น.',
+    });
+    const updatedFolder = withLink.find((f) => f.id === targetFolderId);
+    expect(updatedFolder?.links.length).toBe(1);
+    expect(updatedFolder?.links[0].badge).toBe('Google Sheet');
+
+    const afterRemoveLink = await removeLinkFromPersonalFolder(
+      '171785',
+      targetFolderId,
+      updatedFolder!.links[0].id
+    );
+    expect(afterRemoveLink.find((f) => f.id === targetFolderId)?.links.length).toBe(0);
+
+    // 3. เพิ่มโน้ตในโฟลเดอร์ (ทดสอบทั้งโน้ตส่วนตัว และโน้ตแชร์ในโฟลเดอร์)
+    await upsertFolderNote({
+      folderId: 'sheet-link-69',
+      employeeCode: '171785',
+      authorName: 'หทัยวรรณ (171785)',
+      title: 'โน้ตส่วนตัวของฉัน',
+      content: 'รหัสผ่านเข้าดูรายงานสาขา',
+      color: 'amber',
+      isShared: false,
+    });
+
+    await upsertFolderNote({
+      folderId: 'sheet-link-69',
+      employeeCode: '171785',
+      authorName: 'หทัยวรรณ (171785)',
+      title: 'โน้ตแจ้งเตือนส่วนกลาง',
+      content: 'ส่งขอยกเว้นภายในวันที่ 3 ของเดือนถัดไป',
+      color: 'emerald',
+      isShared: true,
+    });
+
+    // เจ้าของรหัส 171785 เห็นทั้ง 2 โน้ต
+    const notesFor171785 = getFolderNotes('sheet-link-69', '171785');
+    expect(notesFor171785.length).toBe(2);
+
+    // พนักงานรหัสอื่น (110208) เห็นเฉพาะโน้ตที่แชร์ในโฟลเดอร์เท่านั้น
+    const notesFor110208 = getFolderNotes('sheet-link-69', '110208');
+    expect(notesFor110208.length).toBe(1);
+    expect(notesFor110208[0].title).toBe('โน้ตแจ้งเตือนส่วนกลาง');
+
+    // ปักหมุดและลบโน้ต
+    const pinned = await togglePinFolderNote(
+      notesFor171785[0].id,
+      'sheet-link-69',
+      '171785'
+    );
+    expect(pinned.find((n) => n.id === notesFor171785[0].id)?.isPinned).toBe(true);
+
+    const afterDeleteNote = await deleteFolderNote(
+      notesFor171785[0].id,
+      'sheet-link-69',
+      '171785'
+    );
+    expect(afterDeleteNote.length).toBe(1);
   });
 });
