@@ -174,44 +174,42 @@ export const EmployeePortalModal: React.FC<EmployeePortalModalProps> = ({
       setPersonalFolders(localFolders);
       setNotesCountMap(getFolderNotesCountMap(code));
 
-      // ซิงค์ข้อมูลจาก Supabase Cloud แบบพื้นหลัง
+      // ซิงค์ข้อมูลจาก Supabase Cloud แบบพื้นหลัง (โดยไม่เรียก onWorkspaceChanged ซ้ำเพื่อไม่ให้เกิด Loop รีเซ็ตฟอร์ม)
       const synced = await syncEmployeeWorkspaceFromCloud(code);
       setPersonalFolders(synced.personalFolders);
       setNotesCountMap(getFolderNotesCountMap(code));
-      onWorkspaceChanged?.();
     },
-    [currentEmployee?.code, onWorkspaceChanged]
+    [currentEmployee?.code]
   );
 
   useEffect(() => {
-    if (isOpen) {
-      setEnteredCode('');
-      setErrorMsg('');
-      setErrorShake(false);
-      refreshPersonalWorkspace(currentEmployee?.code);
+    if (!isOpen) return;
+    setEnteredCode('');
+    setErrorMsg('');
+    setErrorShake(false);
+    refreshPersonalWorkspace(currentEmployee?.code);
 
-      if (initialFolderId === '__create_personal__') {
-        setActivePortalTab('folders');
-        setSelectedFolderId(null);
-        setEditingPersonalFolderId(null);
-        setFolderNameInput('');
-        setFolderDescInput('');
-        setFolderColorInput('#ec4899');
-        setIsFolderFormOpen(true);
-      } else if (initialFolderId === '__all_folders__') {
-        setActivePortalTab('folders');
-        setSelectedFolderId(null);
-      } else if (initialFolderId === '__user_profile__') {
-        setActivePortalTab('card');
-        setSelectedFolderId(null);
-      } else if (initialFolderId) {
-        setActivePortalTab('folders');
-        setSelectedFolderId(initialFolderId);
-        setInFolderSearch('');
-        setSelectedTopicFilter('all');
-      } else {
-        setActivePortalTab('card');
-      }
+    if (initialFolderId === '__create_personal__') {
+      setActivePortalTab('folders');
+      setSelectedFolderId(null);
+      setEditingPersonalFolderId(null);
+      setFolderNameInput('');
+      setFolderDescInput('');
+      setFolderColorInput('#ec4899');
+      setIsFolderFormOpen(true);
+    } else if (initialFolderId === '__all_folders__') {
+      setActivePortalTab('folders');
+      setSelectedFolderId(null);
+    } else if (initialFolderId === '__user_profile__') {
+      setActivePortalTab('card');
+      setSelectedFolderId(null);
+    } else if (initialFolderId) {
+      setActivePortalTab('folders');
+      setSelectedFolderId(initialFolderId);
+      setInFolderSearch('');
+      setSelectedTopicFilter('all');
+    } else {
+      setActivePortalTab('card');
     }
   }, [isOpen, currentEmployee?.code, initialFolderId, refreshPersonalWorkspace]);
 
@@ -293,6 +291,8 @@ export const EmployeePortalModal: React.FC<EmployeePortalModalProps> = ({
   // การจัดการโฟลเดอร์ส่วนตัวของพนักงาน (สร้าง / แก้ไข / ลบโฟลเดอร์ และเพิ่ม/ลบลิงก์)
   // ============================================================================
   const handleOpenCreatePersonalFolder = () => {
+    setActivePortalTab('folders');
+    setSelectedFolderId(null);
     setEditingPersonalFolderId(null);
     setFolderNameInput('');
     setFolderDescInput('');
@@ -302,6 +302,8 @@ export const EmployeePortalModal: React.FC<EmployeePortalModalProps> = ({
 
   const handleOpenEditPersonalFolder = (folder: EmployeePersonalFolder, e?: React.MouseEvent) => {
     e?.stopPropagation();
+    setActivePortalTab('folders');
+    setSelectedFolderId(null);
     setEditingPersonalFolderId(folder.id);
     setFolderNameInput(folder.name);
     setFolderDescInput(folder.description);
@@ -1888,110 +1890,147 @@ export const EmployeePortalModal: React.FC<EmployeePortalModalProps> = ({
               )}
 
               {/* =====================================================================
-                  แท็บที่ 3: บัตรข้อมูลพนักงาน
+                  แท็บที่ 3: บัตรข้อมูลพนักงาน + ทางลัดสร้าง/จัดการโฟลเดอร์ส่วนตัว
                  ===================================================================== */}
               {activePortalTab === 'card' && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                  <div className="p-4 rounded-2xl bg-slate-950/70 border border-white/10 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-sky-500/15 border border-sky-400/30 flex items-center justify-center text-sky-300">
-                        <UserCheck size={18} />
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    <div className="p-4 rounded-2xl bg-slate-950/70 border border-white/10 flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-sky-500/15 border border-sky-400/30 flex items-center justify-center text-sky-300">
+                          <UserCheck size={18} />
+                        </div>
+                        <div>
+                          <p className="text-[11px] text-slate-400">
+                            รหัสพนักงาน (Employee ID)
+                          </p>
+                          <p className="text-base font-mono font-bold text-white tracking-wider">
+                            {currentEmployee.code}
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleCopyEmpCode(currentEmployee.code)}
+                        className="px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs text-slate-200 flex items-center gap-1 transition"
+                      >
+                        {copiedCode ? (
+                          <>
+                            <Check size={13} className="text-emerald-400" />
+                            <span className="text-emerald-300">คัดลอกแล้ว</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy size={13} />
+                            <span>คัดลอก</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    <div className="p-4 rounded-2xl bg-slate-950/70 border border-white/10 flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-indigo-500/15 border border-indigo-400/30 flex items-center justify-center text-indigo-300 shrink-0">
+                        <Briefcase size={18} />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-[11px] text-slate-400">
+                          ตำแหน่งงาน (Position)
+                        </p>
+                        <p className="text-sm font-semibold text-white truncate">
+                          {currentEmployee.position || 'เจ้าหน้าที่'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="p-4 rounded-2xl bg-slate-950/70 border border-white/10 flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-emerald-500/15 border border-emerald-400/30 flex items-center justify-center text-emerald-300 shrink-0">
+                        <Building2 size={18} />
                       </div>
                       <div>
                         <p className="text-[11px] text-slate-400">
-                          รหัสพนักงาน (Employee ID)
+                          สังกัดสาขา (Branch)
                         </p>
-                        <p className="text-base font-mono font-bold text-white tracking-wider">
-                          {currentEmployee.code}
+                        <p className="text-sm font-semibold text-white">
+                          {currentEmployee.branch || '-'}
                         </p>
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => handleCopyEmpCode(currentEmployee.code)}
-                      className="px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs text-slate-200 flex items-center gap-1 transition"
-                    >
-                      {copiedCode ? (
-                        <>
-                          <Check size={13} className="text-emerald-400" />
-                          <span className="text-emerald-300">คัดลอกแล้ว</span>
-                        </>
-                      ) : (
-                        <>
-                          <Copy size={13} />
-                          <span>คัดลอก</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
 
-                  <div className="p-4 rounded-2xl bg-slate-950/70 border border-white/10 flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-indigo-500/15 border border-indigo-400/30 flex items-center justify-center text-indigo-300 shrink-0">
-                      <Briefcase size={18} />
+                    <div className="p-4 rounded-2xl bg-slate-950/70 border border-white/10 flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-400/30 flex items-center justify-center text-amber-300 shrink-0">
+                        <MapPin size={18} />
+                      </div>
+                      <div>
+                        <p className="text-[11px] text-slate-400">โซนพื้นที่ (Zone)</p>
+                        <p className="text-sm font-semibold text-white">
+                          {currentEmployee.zone
+                            ? `Zone ${currentEmployee.zone}`
+                            : 'ส่วนกลาง / ทั่วไป'}
+                        </p>
+                      </div>
                     </div>
-                    <div className="min-w-0">
-                      <p className="text-[11px] text-slate-400">
-                        ตำแหน่งงาน (Position)
-                      </p>
-                      <p className="text-sm font-semibold text-white truncate">
-                        {currentEmployee.position || 'เจ้าหน้าที่'}
-                      </p>
-                    </div>
-                  </div>
 
-                  <div className="p-4 rounded-2xl bg-slate-950/70 border border-white/10 flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-emerald-500/15 border border-emerald-400/30 flex items-center justify-center text-emerald-300 shrink-0">
-                      <Building2 size={18} />
+                    <div className="p-4 rounded-2xl bg-slate-950/70 border border-white/10 flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-purple-500/15 border border-purple-400/30 flex items-center justify-center text-purple-300 shrink-0">
+                        <Calendar size={18} />
+                      </div>
+                      <div>
+                        <p className="text-[11px] text-slate-400">
+                          วันที่เริ่มงาน (Start Date)
+                        </p>
+                        <p className="text-sm font-semibold text-white">
+                          {currentEmployee.startDate || '-'}
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-[11px] text-slate-400">
-                        สังกัดสาขา (Branch)
-                      </p>
-                      <p className="text-sm font-semibold text-white">
-                        {currentEmployee.branch || '-'}
-                      </p>
+
+                    <div className="p-4 rounded-2xl bg-slate-950/70 border border-white/10 flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-pink-500/15 border border-pink-400/30 flex items-center justify-center text-pink-300 shrink-0">
+                        <Clock size={18} />
+                      </div>
+                      <div>
+                        <p className="text-[11px] text-slate-400">
+                          อายุงานปัจจุบัน (Tenure)
+                        </p>
+                        <p className="text-sm font-semibold text-emerald-300">
+                          {calculateWorkTenure(currentEmployee.startDate)}
+                        </p>
+                      </div>
                     </div>
                   </div>
 
-                  <div className="p-4 rounded-2xl bg-slate-950/70 border border-white/10 flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-400/30 flex items-center justify-center text-amber-300 shrink-0">
-                      <MapPin size={18} />
+                  {/* กล่องทางลัดสร้างและจัดการโฟลเดอร์ส่วนตัวในหน้าข้อมูลพนักงาน */}
+                  <div className="p-4 rounded-2xl bg-gradient-to-br from-pink-950/40 via-slate-950/80 to-indigo-950/40 border border-pink-400/30 flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-pink-500/20 border border-pink-400/40 flex items-center justify-center text-pink-300 shrink-0">
+                        <Star size={18} className="fill-current" />
+                      </div>
+                      <div>
+                        <p className="text-xs sm:text-sm font-bold text-white">
+                          โฟลเดอร์ส่วนตัวของฉัน ({personalFolders.length} โฟลเดอร์)
+                        </p>
+                        <p className="text-[11px] text-slate-300">
+                          สร้างโฟลเดอร์ส่วนตัว แก้ไขชื่อ/สี เพิ่มลิงก์งาน และจดสมุดโน้ตเฉพาะรหัสพนักงานของคุณ
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-[11px] text-slate-400">โซนพื้นที่ (Zone)</p>
-                      <p className="text-sm font-semibold text-white">
-                        {currentEmployee.zone
-                          ? `Zone ${currentEmployee.zone}`
-                          : 'ส่วนกลาง / ทั่วไป'}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="p-4 rounded-2xl bg-slate-950/70 border border-white/10 flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-purple-500/15 border border-purple-400/30 flex items-center justify-center text-purple-300 shrink-0">
-                      <Calendar size={18} />
-                    </div>
-                    <div>
-                      <p className="text-[11px] text-slate-400">
-                        วันที่เริ่มงาน (Start Date)
-                      </p>
-                      <p className="text-sm font-semibold text-white">
-                        {currentEmployee.startDate || '-'}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="p-4 rounded-2xl bg-slate-950/70 border border-white/10 flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-pink-500/15 border border-pink-400/30 flex items-center justify-center text-pink-300 shrink-0">
-                      <Clock size={18} />
-                    </div>
-                    <div>
-                      <p className="text-[11px] text-slate-400">
-                        อายุงานปัจจุบัน (Tenure)
-                      </p>
-                      <p className="text-sm font-semibold text-emerald-300">
-                        {calculateWorkTenure(currentEmployee.startDate)}
-                      </p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleOpenCreatePersonalFolder}
+                        className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-pink-500 to-indigo-600 hover:from-pink-400 hover:to-indigo-500 text-xs font-bold text-white flex items-center gap-1.5 shadow transition"
+                      >
+                        <FolderPlus size={14} />
+                        <span>+ สร้างโฟลเดอร์ส่วนตัวใหม่</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActivePortalTab('folders')}
+                        className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-xs font-semibold text-white flex items-center gap-1.5 transition"
+                      >
+                        <FolderOpen size={14} className="text-sky-300" />
+                        <span>เปิดดูโฟลเดอร์ทั้งหมด</span>
+                      </button>
                     </div>
                   </div>
                 </div>

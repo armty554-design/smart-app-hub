@@ -12,7 +12,9 @@ import {
   addLinkToEmployeeSheetFolder,
   addLinkToPersonalFolder,
   buildLinkItemShareText,
+  createPersonalFolder,
   deleteLinkFromEmployeeSheetFolder,
+  deletePersonalFolder,
   formatLinkUpdatedTime,
   getEmployeeLinksSheetUrl,
   removeLinkFromPersonalFolder,
@@ -35,12 +37,23 @@ import {
   Clock,
   FileSpreadsheet,
   Folder,
+  FolderPlus,
   Star,
   Lock,
   X,
   CheckCircle2,
   FolderOpen,
 } from 'lucide-react';
+
+const PERSONAL_FOLDER_COLORS = [
+  '#ec4899',
+  '#0ea5e9',
+  '#6366f1',
+  '#10b981',
+  '#f59e0b',
+  '#8b5cf6',
+  '#f43f5e',
+];
 
 interface FolderPageViewProps {
   mode: 'employee-sheet' | 'employee-personal' | 'category';
@@ -96,10 +109,12 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
   const [topicInput, setTopicInput] = useState('');
   const [descInput, setDescInput] = useState('');
 
-  // ฟอร์มแก้ไขชื่อโฟลเดอร์ส่วนตัว
+  // ฟอร์มแก้ไขชื่อ/สีโฟลเดอร์ส่วนตัว หรือสร้างโฟลเดอร์ส่วนตัวใหม่ในหน้านี้ทันที
   const [isEditingFolderMeta, setIsEditingFolderMeta] = useState(false);
+  const [ isCreatingPersonalFolder, setIsCreatingPersonalFolder ] = useState(false);
   const [folderNameEdit, setFolderNameEdit] = useState('');
   const [folderDescEdit, setFolderDescEdit] = useState('');
+  const [folderColorEdit, setFolderColorEdit] = useState('#ec4899');
 
   // สิทธิ์การแก้ไข: พนักงานทั่วไปแก้ไขได้เฉพาะใน "โฟลเดอร์ส่วนตัว" เท่านั้น ส่วนกลางต้องเปิดโหมดแอดมิน (isEditMode)
   const canManageCurrentFolder =
@@ -139,6 +154,7 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
     setIsLinkFormOpen(false);
     setEditingLinkId(null);
     setIsEditingFolderMeta(false);
+    setIsCreatingPersonalFolder(false);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, [activeFolderId]);
 
@@ -336,14 +352,48 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
 
   const handleSaveFolderMeta = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!personalFolder || !currentEmployee || !folderNameEdit.trim()) return;
+    if (!currentEmployee || !folderNameEdit.trim()) return;
+
+    if (isCreatingPersonalFolder) {
+      const updated = await createPersonalFolder(currentEmployee.code, {
+        name: folderNameEdit,
+        description: folderDescEdit,
+        color: folderColorEdit,
+      });
+      setIsCreatingPersonalFolder(false);
+      setIsEditingFolderMeta(false);
+      const newest = updated[updated.length - 1];
+      showTempBanner(`สร้างโฟลเดอร์ส่วนตัว "${folderNameEdit.trim()}" เรียบร้อยแล้ว!`);
+      onRefreshWorkspace();
+      if (newest) {
+        onSwitchFolder({ folderId: newest.id });
+      }
+      return;
+    }
+
+    if (!personalFolder) return;
     await updatePersonalFolder(currentEmployee.code, personalFolder.id, {
       name: folderNameEdit,
       description: folderDescEdit,
+      color: folderColorEdit,
     });
     setIsEditingFolderMeta(false);
-    showTempBanner(`อัปเดตชื่อโฟลเดอร์ส่วนตัว "${folderNameEdit.trim()}" เรียบร้อยแล้ว`);
+    showTempBanner(`อัปเดตโฟลเดอร์ส่วนตัว "${folderNameEdit.trim()}" เรียบร้อยแล้ว`);
     onRefreshWorkspace();
+  };
+
+  const handleDeleteCurrentPersonalFolder = async () => {
+    if (!personalFolder || !currentEmployee || allPersonalFolders.length <= 1) return;
+    if (!window.confirm(`ต้องการลบโฟลเดอร์ส่วนตัว "${personalFolder.name}" ของคุณใช่หรือไม่?`)) {
+      return;
+    }
+    const updated = await deletePersonalFolder(currentEmployee.code, personalFolder.id);
+    onRefreshWorkspace();
+    if (updated.length > 0) {
+      onSwitchFolder({ folderId: updated[0].id });
+    } else {
+      onBackToHome();
+    }
   };
 
   // ค่าที่เลือกอยู่ใน Dropdown สลับโฟลเดอร์ด่วน
@@ -352,6 +402,14 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
 
   const handleSwitcherSelectChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const val = e.target.value;
+    if (val === '__create_personal__') {
+      setFolderNameEdit('');
+      setFolderDescEdit('');
+      setFolderColorEdit('#ec4899');
+      setIsCreatingPersonalFolder(true);
+      setIsEditingFolderMeta(true);
+      return;
+    }
     if (val.startsWith('cat:')) {
       onSwitchFolder({ categoryId: val.slice(4) });
     } else if (val.startsWith('folder:')) {
@@ -419,6 +477,7 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
                           ⭐ {pf.name} ({pf.links.length} ลิงก์)
                         </option>
                       ))}
+                      <option value="__create_personal__">➕ สร้างโฟลเดอร์ส่วนตัวใหม่...</option>
                     </optgroup>
                   )}
                   {currentEmployee && allSheetFolders.length > 0 && (
@@ -483,13 +542,37 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
               </a>
             )}
 
-            {/* ปุ่มแก้ไขชื่อโฟลเดอร์ & เพิ่มลิงก์ (แสดงเฉพาะโฟลเดอร์ส่วนตัว หรือเมื่อแอดมินปลดล็อกเท่านั้น) */}
+            {/* ปุ่มสร้างโฟลเดอร์ส่วนตัวใหม่ & แก้ไขชื่อโฟลเดอร์ & เพิ่มลิงก์ */}
+            {currentEmployee && (
+              <button
+                type="button"
+                onClick={() => {
+                  setFolderNameEdit('');
+                  setFolderDescEdit('');
+                  setFolderColorEdit('#ec4899');
+                  setIsCreatingPersonalFolder(true);
+                  setIsEditingFolderMeta(true);
+                }}
+                className={`px-2.5 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1 transition ${
+                  isLightTheme
+                    ? 'bg-pink-50 hover:bg-pink-100 border-pink-300 text-pink-800'
+                    : 'bg-pink-500/15 hover:bg-pink-500/25 border-pink-400/35 text-pink-200'
+                }`}
+                title="สร้างโฟลเดอร์ส่วนตัวใหม่ของคุณ"
+              >
+                <FolderPlus size={13} />
+                <span>+ โฟลเดอร์ส่วนตัว</span>
+              </button>
+            )}
+
             {mode === 'employee-personal' && personalFolder && canManageCurrentFolder && (
               <button
                 type="button"
                 onClick={() => {
+                  setIsCreatingPersonalFolder(false);
                   setFolderNameEdit(personalFolder.name);
                   setFolderDescEdit(personalFolder.description);
+                  setFolderColorEdit(personalFolder.color || '#ec4899');
                   setIsEditingFolderMeta((prev) => !prev);
                 }}
                 className={`px-2.5 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1 transition ${
@@ -499,7 +582,7 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
                 }`}
               >
                 <Pencil size={12} />
-                <span className="hidden sm:inline">ตั้งชื่อโฟลเดอร์</span>
+                <span className="hidden sm:inline">แก้ไขโฟลเดอร์</span>
               </button>
             )}
 
@@ -749,8 +832,8 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
         </div>
       )}
 
-      {/* ฟอร์มแก้ไขชื่อโฟลเดอร์ส่วนตัว */}
-      {isEditingFolderMeta && mode === 'employee-personal' && canManageCurrentFolder && (
+      {/* ฟอร์มสร้างหรือแก้ไขโฟลเดอร์ส่วนตัว */}
+      {isEditingFolderMeta && currentEmployee && (
         <form
           onSubmit={handleSaveFolderMeta}
           className={`p-4 rounded-2xl border-2 space-y-3 animate-fade-in ${
@@ -761,15 +844,23 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
         >
           <div className="flex items-center justify-between">
             <span
-              className={`text-xs font-bold ${
+              className={`text-xs sm:text-sm font-bold flex items-center gap-1.5 ${
                 isLightTheme ? 'text-pink-800' : 'text-pink-300'
               }`}
             >
-              แก้ไขชื่อและคำอธิบายโฟลเดอร์ส่วนตัว
+              <FolderPlus size={15} />
+              <span>
+                {isCreatingPersonalFolder
+                  ? `สร้างโฟลเดอร์ส่วนตัวใหม่ (รหัสพนักงาน ${currentEmployee.code})`
+                  : 'แก้ไขชื่อ คำอธิบาย และสีโฟลเดอร์ส่วนตัว'}
+              </span>
             </span>
             <button
               type="button"
-              onClick={() => setIsEditingFolderMeta(false)}
+              onClick={() => {
+                setIsEditingFolderMeta(false);
+                setIsCreatingPersonalFolder(false);
+              }}
               className={`p-1 rounded-lg ${
                 isLightTheme ? 'bg-slate-100 text-slate-600' : 'bg-white/10 text-slate-300'
               }`}
@@ -783,7 +874,7 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
               required
               value={folderNameEdit}
               onChange={(e) => setFolderNameEdit(e.target.value)}
-              placeholder="ชื่อโฟลเดอร์ส่วนตัว"
+              placeholder="ชื่อโฟลเดอร์ส่วนตัว (เช่น งานประจำวัน, ลิงก์สาขา)"
               className={`px-3.5 py-2 rounded-xl border text-xs sm:text-sm ${
                 isLightTheme
                   ? 'bg-slate-50 border-slate-300 text-slate-900'
@@ -802,22 +893,62 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
               }`}
             />
           </div>
-          <div className="flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => setIsEditingFolderMeta(false)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-semibold ${
-                isLightTheme ? 'bg-slate-100 text-slate-700' : 'bg-white/10 text-slate-300'
-              }`}
-            >
-              ยกเลิก
-            </button>
-            <button
-              type="submit"
-              className="px-4 py-1.5 rounded-xl bg-pink-600 hover:bg-pink-500 text-xs font-bold text-white"
-            >
-              บันทึกชื่อโฟลเดอร์
-            </button>
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs opacity-75">สีโฟลเดอร์:</span>
+              {PERSONAL_FOLDER_COLORS.map((colorHex) => (
+                <button
+                  key={colorHex}
+                  type="button"
+                  onClick={() => setFolderColorEdit(colorHex)}
+                  className={`w-6 h-6 rounded-full border-2 transition flex items-center justify-center ${
+                    folderColorEdit === colorHex
+                      ? 'border-slate-900 dark:border-white scale-110 shadow'
+                      : 'border-transparent opacity-75 hover:opacity-100'
+                  }`}
+                  style={{ backgroundColor: colorHex }}
+                >
+                  {folderColorEdit === colorHex && <Check size={12} className="text-white" />}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {!isCreatingPersonalFolder &&
+                mode === 'employee-personal' &&
+                allPersonalFolders.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={handleDeleteCurrentPersonalFolder}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1 ${
+                      isLightTheme
+                        ? 'bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200'
+                        : 'bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30'
+                    }`}
+                  >
+                    <Trash2 size={12} />
+                    <span>ลบโฟลเดอร์นี้</span>
+                  </button>
+                )}
+              <button
+                type="button"
+                onClick={() => {
+                  setIsEditingFolderMeta(false);
+                  setIsCreatingPersonalFolder(false);
+                }}
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold ${
+                  isLightTheme ? 'bg-slate-100 text-slate-700' : 'bg-white/10 text-slate-300'
+                }`}
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-1.5 rounded-xl bg-gradient-to-r from-pink-600 to-indigo-600 hover:from-pink-500 hover:to-indigo-500 text-xs font-bold text-white shadow"
+              >
+                {isCreatingPersonalFolder ? 'สร้างโฟลเดอร์ส่วนตัว' : 'บันทึกการแก้ไข'}
+              </button>
+            </div>
           </div>
         </form>
       )}

@@ -187,6 +187,14 @@ export function App() {
   const [inlineFolderName, setInlineFolderName] = useState('');
   const [inlineFolderDesc, setInlineFolderDesc] = useState('');
   const [inlineFolderColor, setInlineFolderColor] = useState('#ec4899');
+  const [inlineFolderStatusMsg, setInlineFolderStatusMsg] = useState('');
+
+  const showInlineFolderBanner = (msg: string) => {
+    setInlineFolderStatusMsg(msg);
+    setTimeout(() => {
+      setInlineFolderStatusMsg((prev) => (prev === msg ? '' : prev));
+    }, 3400);
+  };
 
   const updateFolderLayoutPrefs = (patch: Partial<EmployeeFolderLayoutPrefs>) => {
     setFolderLayoutPrefs((prev) => {
@@ -229,20 +237,23 @@ export function App() {
   const handleSaveInlinePersonalFolder = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentEmployee || !inlineFolderName.trim()) return;
+    const cleanName = inlineFolderName.trim();
     if (editingInlineFolderId) {
       const updated = await updatePersonalFolder(currentEmployee.code, editingInlineFolderId, {
-        name: inlineFolderName,
+        name: cleanName,
         description: inlineFolderDesc,
         color: inlineFolderColor,
       });
       setPersonalFolders(updated);
+      showInlineFolderBanner(`แก้ไขโฟลเดอร์ส่วนตัว "${cleanName}" เรียบร้อยแล้ว!`);
     } else {
       const updated = await createPersonalFolder(currentEmployee.code, {
-        name: inlineFolderName,
+        name: cleanName,
         description: inlineFolderDesc,
         color: inlineFolderColor,
       });
       setPersonalFolders(updated);
+      showInlineFolderBanner(`สร้างโฟลเดอร์ส่วนตัว "${cleanName}" เรียบร้อยแล้ว!`);
     }
     setIsInlinePersonalFormOpen(false);
     setEditingInlineFolderId(null);
@@ -259,6 +270,7 @@ export function App() {
     }
     const updated = await deletePersonalFolder(currentEmployee.code, folder.id);
     setPersonalFolders(updated);
+    showInlineFolderBanner(`ลบโฟลเดอร์ส่วนตัว "${folder.name}" เรียบร้อยแล้ว`);
   };
 
   const handleMoveInlinePersonalFolder = async (
@@ -770,163 +782,234 @@ export function App() {
       style={wallpaperStyle}
       className="min-h-screen w-full flex flex-col justify-between pb-36 transition-all duration-500 select-none"
     >
-      {/* แถบ Status Bar ด้านบนสุด (แยกดีไซน์ Mobile Status Bar vs Desktop Top Bar และรองรับทั้งธีมสว่าง/ธีมมืด) */}
+      {/* แถบ Status Bar ด้านบนสุด (แยกดีไซน์ Mobile Status Bar vs Desktop Top Bar ไม่ให้ล้นจอมือถือเมื่อล็อกอินทั้งพนักงานและแอดมิน) */}
       <header
         className={`sticky top-0 z-20 backdrop-blur-xl border-b transition-colors ${
           isLightTheme
-            ? 'bg-white/75 border-sky-200/80 shadow-sm text-slate-800'
-            : 'bg-slate-950/40 border-white/10 text-white/90'
+            ? 'bg-white/80 border-sky-200/80 shadow-sm text-slate-800'
+            : 'bg-slate-950/60 border-white/10 text-white/90'
         }`}
       >
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-2.5 flex items-center justify-between text-xs font-medium">
-          <div className="flex items-center gap-3">
-            <span className="font-bold tracking-wide text-sm">{timeString}</span>
-            <span className={`hidden sm:inline ${isLightTheme ? 'text-slate-300' : 'text-white/40'}`}>|</span>
-            <span className={`hidden sm:inline ${isLightTheme ? 'text-slate-600' : 'text-white/80'}`}>
-              {dateString}
-            </span>
-            <span
-              className={`hidden lg:inline-flex items-center gap-1.5 ml-2 px-2.5 py-0.5 rounded-full border text-[11px] ${
-                isLightTheme
-                  ? 'bg-sky-100/90 border-sky-300 text-sky-800 font-semibold'
-                  : 'bg-indigo-500/20 border-indigo-400/30 text-indigo-200'
-              }`}
-            >
-              <Monitor size={12} className={isLightTheme ? 'text-sky-600' : 'text-indigo-400'} />
-              Desktop Workspace Mode
-            </span>
-            <span
-              className={`inline-flex lg:hidden items-center gap-1 px-2 py-0.5 rounded-full text-[10px] ${
-                isLightTheme
-                  ? 'bg-sky-100 text-sky-800 border border-sky-200 font-semibold'
-                  : 'bg-white/10 text-slate-300'
-              }`}
-            >
-              <Smartphone size={11} className={isLightTheme ? 'text-sky-600' : 'text-emerald-400'} />
-              Mobile
-            </span>
-          </div>
-
-          {/* แถบปุ่มติดตั้งแอป Android + ปุ่มพนักงาน + สถานะโหมดแก้ไข */}
-          <div className="flex items-center gap-2">
-            {/* ปุ่มเข้าสู่ระบบพนักงาน / ดูบัตรพนักงานดิจิทัล */}
-            <button
-              type="button"
-              onClick={() => openUserPage('__user_profile__')}
-              className={`inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-full border text-[11px] font-semibold shadow-sm transition ${
-                isEmployeePortalOpen
-                  ? 'bg-sky-600 border-sky-600 text-white shadow'
-                  : currentEmployee
-                  ? isLightTheme
-                    ? 'bg-emerald-50 hover:bg-emerald-100 border-emerald-300 text-emerald-800'
-                    : 'bg-emerald-500/20 hover:bg-emerald-500/30 border-emerald-400/40 text-emerald-200'
-                  : isLightTheme
-                  ? 'bg-sky-600 hover:bg-sky-500 border-sky-600 text-white'
-                  : 'bg-sky-500/25 hover:bg-sky-500/35 border-sky-400/40 text-sky-200'
-              }`}
-              title={
-                currentEmployee
-                  ? `${currentEmployee.fullName} (${currentEmployee.code}) - คลิกเพื่อเปิดหน้าข้อมูลพนักงาน`
-                  : 'เข้าสู่ระบบสำหรับพนักงานด้วยรหัสพนักงาน'
-              }
-            >
-              {currentEmployee ? (
-                <>
-                  <UserCheck size={12} className="shrink-0" />
-                  <span className="truncate max-w-[115px] sm:max-w-[160px]">
-                    {currentEmployee.firstName} ({currentEmployee.code})
-                  </span>
-                </>
-              ) : (
-                <>
-                  <IdCard size={13} className="shrink-0" />
-                  <span>สำหรับพนักงาน</span>
-                </>
-              )}
-            </button>
-
-            {/* สถานะการเชื่อมต่อฐานข้อมูล */}
-            {dataSource === 'supabase' && (
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 py-2 sm:py-2.5 text-xs font-medium">
+          {/* แถวที่ 1: เวลา + ปุ่มพนักงาน + ปุ่มแอดมิน (จัดขนาดพอดีจอมือถือ 100% ไม่ล้นขอบ) */}
+          <div className="flex items-center justify-between gap-2 min-w-0">
+            <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+              <span className="font-bold tracking-wide text-xs sm:text-sm whitespace-nowrap">
+                {timeString}
+              </span>
+              <span className={`hidden sm:inline ${isLightTheme ? 'text-slate-300' : 'text-white/40'}`}>
+                |
+              </span>
+              <span className={`hidden sm:inline ${isLightTheme ? 'text-slate-600' : 'text-white/80'}`}>
+                {dateString}
+              </span>
               <span
-                className={`hidden sm:inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full border text-[10px] font-semibold ${
+                className={`hidden lg:inline-flex items-center gap-1.5 ml-2 px-2.5 py-0.5 rounded-full border text-[11px] ${
                   isLightTheme
-                    ? 'bg-emerald-100 border-emerald-300 text-emerald-800'
-                    : 'bg-emerald-500/20 border-emerald-400/30 text-emerald-300'
+                    ? 'bg-sky-100/90 border-sky-300 text-sky-800 font-semibold'
+                    : 'bg-indigo-500/20 border-indigo-400/30 text-indigo-200'
                 }`}
               >
-                <Database size={10} />
-                Cloud Sync
+                <Monitor size={12} className={isLightTheme ? 'text-sky-600' : 'text-indigo-400'} />
+                Desktop Workspace Mode
               </span>
-            )}
-
-            {/* ปุ่มไอคอนสำหรับติดตั้งลงหน้าจอ Android / มือถือ */}
-            <AndroidInstallPrompt hubTitle={settings.hub_title} />
-
-            <Wifi
-              size={14}
-              className={`hidden sm:block ${isLightTheme ? 'text-slate-600' : 'text-white/80'}`}
-            />
-
-            {/* ปุ่มสลับโหมดแก้ไข (Admin Mode) */}
-            {isEditMode ? (
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => setIsAdminDashboardOpen(true)}
-                  className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-lg transition"
-                >
-                  <LayoutDashboard size={13} />
-                  <span className="hidden xs:inline">ตารางหลังบ้าน (CMS)</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsSettingsOpen(true)}
-                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition ${
+              {!isEditMode && (
+                <span
+                  className={`hidden md:inline-flex lg:hidden items-center gap-1 px-2 py-0.5 rounded-full text-[10px] ${
                     isLightTheme
-                      ? 'bg-sky-100 hover:bg-sky-200 text-sky-900 border border-sky-300'
-                      : 'bg-white/15 hover:bg-white/25 text-white'
-                  }`}
-                  title="ตั้งค่าธีมสว่าง/มืด และรหัส PIN"
-                >
-                  <Settings size={13} />
-                  <span className="hidden sm:inline">ธีม & PIN</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => openAddLinkModal(activeCategoryId, false)}
-                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition ${
-                    isLightTheme
-                      ? 'bg-slate-800 hover:bg-slate-700 text-white'
-                      : 'bg-white/15 hover:bg-white/25 text-white'
+                      ? 'bg-sky-100 text-sky-800 border border-sky-200 font-semibold'
+                      : 'bg-white/10 text-slate-300'
                   }`}
                 >
-                  <Plus size={13} />
-                  <span className="hidden sm:inline">เพิ่มลิงก์</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsEditMode(false)}
-                  className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold shadow-lg transition"
-                >
-                  <Check size={13} />
-                  ล็อกกลับ
-                </button>
-              </div>
-            ) : (
+                  <Smartphone
+                    size={11}
+                    className={isLightTheme ? 'text-sky-600' : 'text-emerald-400'}
+                  />
+                  Mobile
+                </span>
+              )}
+            </div>
+
+            {/* แถบปุ่มติดตั้งแอป Android + ปุ่มพนักงาน + สถานะโหมดแก้ไข */}
+            <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 justify-end">
+              {/* ปุ่มเข้าสู่ระบบพนักงาน / ดูบัตรพนักงานดิจิทัล */}
               <button
                 type="button"
-                onClick={() => requestAdminAccess('dashboard')}
-                className={`inline-flex items-center gap-1 px-2 py-1 rounded-full border text-[11px] font-medium transition ${
-                  isLightTheme
-                    ? 'bg-white/80 hover:bg-sky-50 border-slate-300 text-slate-600 hover:text-slate-900 shadow-sm'
-                    : 'bg-white/5 hover:bg-white/15 border-white/10 text-white/50 hover:text-white/90'
+                onClick={() => openUserPage('__user_profile__')}
+                className={`inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1 rounded-full border text-[11px] font-semibold shadow-sm transition min-w-0 whitespace-nowrap ${
+                  isEmployeePortalOpen
+                    ? 'bg-sky-600 border-sky-600 text-white shadow'
+                    : currentEmployee
+                    ? isLightTheme
+                      ? 'bg-emerald-50 hover:bg-emerald-100 border-emerald-300 text-emerald-800'
+                      : 'bg-emerald-500/20 hover:bg-emerald-500/30 border-emerald-400/40 text-emerald-200'
+                    : isLightTheme
+                    ? 'bg-sky-600 hover:bg-sky-500 border-sky-600 text-white'
+                    : 'bg-sky-500/25 hover:bg-sky-500/35 border-sky-400/40 text-sky-200'
                 }`}
-                title="สำหรับผู้ดูแลระบบเท่านั้น (Admin Lock)"
+                title={
+                  currentEmployee
+                    ? `${currentEmployee.fullName} (${currentEmployee.code}) - คลิกเพื่อเปิดหน้าข้อมูลพนักงาน`
+                    : 'เข้าสู่ระบบสำหรับพนักงานด้วยรหัสพนักงาน'
+                }
               >
-                <Lock size={11} />
+                {currentEmployee ? (
+                  <>
+                    <UserCheck size={12} className="shrink-0" />
+                    <span className="truncate max-w-[115px] sm:max-w-[160px]">
+                      {currentEmployee.firstName} ({currentEmployee.code})
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <IdCard size={13} className="shrink-0" />
+                    <span>สำหรับพนักงาน</span>
+                  </>
+                )}
               </button>
-            )}
+
+              {/* สถานะการเชื่อมต่อฐานข้อมูล */}
+              {dataSource === 'supabase' && (
+                <span
+                  className={`hidden md:inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full border text-[10px] font-semibold shrink-0 ${
+                    isLightTheme
+                      ? 'bg-emerald-100 border-emerald-300 text-emerald-800'
+                      : 'bg-emerald-500/20 border-emerald-400/30 text-emerald-300'
+                  }`}
+                >
+                  <Database size={10} />
+                  Cloud Sync
+                </span>
+              )}
+
+              {/* ปุ่มไอคอนสำหรับติดตั้งลงหน้าจอ Android / มือถือ (ซ่อนชั่วคราวบนจอมือถือเมื่อเปิดโหมดแอดมินเพื่อไม่ให้เบียดกัน) */}
+              <div className={isEditMode ? 'hidden sm:block shrink-0' : 'shrink-0'}>
+                <AndroidInstallPrompt hubTitle={settings.hub_title} />
+              </div>
+
+              <Wifi
+                size={14}
+                className={`hidden sm:block shrink-0 ${
+                  isLightTheme ? 'text-slate-600' : 'text-white/80'
+                }`}
+              />
+
+              {/* ปุ่มสลับโหมดแก้ไข (Admin Mode) */}
+              {isEditMode ? (
+                <>
+                  {/* บนจอแท็บเล็ต/คอมพิวเตอร์ แสดงปุ่มแอดมินเรียงในแถวเดียว */}
+                  <div className="hidden sm:flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setIsAdminDashboardOpen(true)}
+                      className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-lg transition whitespace-nowrap"
+                    >
+                      <LayoutDashboard size={13} />
+                      <span>ตารางหลังบ้าน (CMS)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsSettingsOpen(true)}
+                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition whitespace-nowrap ${
+                        isLightTheme
+                          ? 'bg-sky-100 hover:bg-sky-200 text-sky-900 border border-sky-300'
+                          : 'bg-white/15 hover:bg-white/25 text-white'
+                      }`}
+                      title="ตั้งค่าธีมสว่าง/มืด และรหัส PIN"
+                    >
+                      <Settings size={13} />
+                      <span>ธีม & PIN</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openAddLinkModal(activeCategoryId, false)}
+                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition whitespace-nowrap ${
+                        isLightTheme
+                          ? 'bg-slate-800 hover:bg-slate-700 text-white'
+                          : 'bg-white/15 hover:bg-white/25 text-white'
+                      }`}
+                    >
+                      <Plus size={13} />
+                      <span>เพิ่มลิงก์</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsEditMode(false)}
+                      className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold shadow-lg transition whitespace-nowrap"
+                    >
+                      <Check size={13} />
+                      <span>ล็อกกลับ</span>
+                    </button>
+                  </div>
+
+                  {/* บนจอมือถือ แถวที่ 1 แสดงเฉพาะปุ่ม "ล็อกกลับ" กะทัดรัด ส่วนเครื่องมือแอดมินแสดงในแถวย่อยด้านล่าง */}
+                  <button
+                    type="button"
+                    onClick={() => setIsEditMode(false)}
+                    className="inline-flex sm:hidden items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-[11px] font-bold shadow transition whitespace-nowrap shrink-0"
+                  >
+                    <Check size={12} />
+                    <span>ล็อกกลับ</span>
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => requestAdminAccess('dashboard')}
+                  className={`inline-flex items-center gap-1 px-2 py-1 rounded-full border text-[11px] font-medium transition shrink-0 ${
+                    isLightTheme
+                      ? 'bg-white/80 hover:bg-sky-50 border-slate-300 text-slate-600 hover:text-slate-900 shadow-sm'
+                      : 'bg-white/5 hover:bg-white/15 border-white/10 text-white/50 hover:text-white/90'
+                  }`}
+                  title="สำหรับผู้ดูแลระบบเท่านั้น (Admin Lock)"
+                >
+                  <Lock size={11} />
+                </button>
+              )}
+            </div>
           </div>
+
+          {/* แถวที่ 2 เฉพาะจอมือถือเมื่อเปิดโหมดแอดมิน: จัดวางปุ่มจัดการ 3 คอลัมน์เต็มความกว้าง ไม่ล้นหน้าจอ */}
+          {isEditMode && (
+            <div
+              className={`grid sm:hidden grid-cols-3 gap-1.5 pt-2 mt-2 border-t ${
+                isLightTheme ? 'border-sky-200/80' : 'border-white/10'
+              }`}
+            >
+              <button
+                type="button"
+                onClick={() => setIsAdminDashboardOpen(true)}
+                className="flex items-center justify-center gap-1 py-1.5 px-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-bold shadow transition truncate"
+              >
+                <LayoutDashboard size={12} className="shrink-0" />
+                <span className="truncate">หลังบ้าน (CMS)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsSettingsOpen(true)}
+                className={`flex items-center justify-center gap-1 py-1.5 px-2 rounded-xl text-[11px] font-bold border transition truncate ${
+                  isLightTheme
+                    ? 'bg-sky-100 hover:bg-sky-200 text-sky-900 border-sky-300'
+                    : 'bg-white/15 hover:bg-white/25 text-white border-white/15'
+                }`}
+              >
+                <Settings size={12} className="shrink-0" />
+                <span className="truncate">ธีม & PIN</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => openAddLinkModal(activeCategoryId, false)}
+                className={`flex items-center justify-center gap-1 py-1.5 px-2 rounded-xl text-[11px] font-bold transition truncate ${
+                  isLightTheme
+                    ? 'bg-slate-800 hover:bg-slate-700 text-white'
+                    : 'bg-white/15 hover:bg-white/25 text-white border border-white/15'
+                }`}
+              >
+                <Plus size={12} className="shrink-0" />
+                <span className="truncate">เพิ่มลิงก์</span>
+              </button>
+            </div>
+          )}
         </div>
       </header>
 
@@ -1901,6 +1984,29 @@ export function App() {
                   <span>+ สร้างโฟลเดอร์ส่วนตัวใหม่</span>
                 </button>
               </div>
+
+              {/* แถบแจ้งเตือนเมื่อสร้าง/แก้ไขโฟลเดอร์ส่วนตัวสำเร็จ */}
+              {inlineFolderStatusMsg && (
+                <div
+                  className={`px-3.5 py-2 rounded-xl border text-xs font-bold flex items-center justify-between gap-2 animate-fade-in ${
+                    isLightTheme
+                      ? 'bg-emerald-100 border-emerald-300 text-emerald-900'
+                      : 'bg-emerald-500/20 border-emerald-400/40 text-emerald-200'
+                  }`}
+                >
+                  <span className="flex items-center gap-1.5">
+                    <Check size={14} className="shrink-0" />
+                    <span>{inlineFolderStatusMsg}</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setInlineFolderStatusMsg('')}
+                    className="opacity-70 hover:opacity-100"
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
+              )}
 
               {/* ฟอร์มสร้างหรือแก้ไขโฟลเดอร์ส่วนตัวแบบ Inline (แสดงบนหน้าโฮมทันที ไม่เด้งป๊อปอัพ) */}
               {isInlinePersonalFormOpen && (

@@ -516,37 +516,62 @@ export function getPersonalFoldersForEmployee(employeeCode: string): EmployeePer
   return initial;
 }
 
+// ตัวล็อกป้องกันการดึงข้อมูลจาก Cloud มาทับขณะที่พนักงานเพิ่งกดสร้าง/แก้ไขโฟลเดอร์ส่วนตัว
+let workspaceMutationCount = 0;
+let lastWorkspaceMutationAt = 0;
+
+function beginWorkspaceMutation() {
+  workspaceMutationCount += 1;
+  lastWorkspaceMutationAt = Date.now();
+}
+
+function endWorkspaceMutation() {
+  workspaceMutationCount = Math.max(0, workspaceMutationCount - 1);
+  lastWorkspaceMutationAt = Date.now();
+}
+
+function isWorkspaceMutationRecent(cooldownMs = 4500): boolean {
+  if (workspaceMutationCount > 0) return true;
+  return Date.now() - lastWorkspaceMutationAt < cooldownMs;
+}
+
 async function persistPersonalFoldersForEmployee(
   employeeCode: string,
   folders: EmployeePersonalFolder[]
 ): Promise<EmployeePersonalFolder[]> {
   const cleanCode = employeeCode.trim();
+  beginWorkspaceMutation();
   try {
-    localStorage.setItem(getPersonalFoldersStorageKey(cleanCode), JSON.stringify(folders));
-  } catch {
-    // ignore storage error
-  }
-
-  const supabase = getSupabaseClient();
-  if (supabase) {
     try {
-      await supabase.from('app_settings').upsert({
-        id: `${SUPABASE_EMP_WORKSPACE_PREFIX}${cleanCode}`,
-        hub_title: `Employee Workspace ${cleanCode}`,
-        hub_subtitle: 'personal_folders_v1',
-        admin_pin: '0000',
-        wallpaper_id: 'aurora-night',
-        custom_wallpaper_url: JSON.stringify(folders),
-        icon_shape: 'squircle',
-        grid_columns: 4,
-        updated_at: new Date().toISOString(),
-      });
+      localStorage.setItem(getPersonalFoldersStorageKey(cleanCode), JSON.stringify(folders));
     } catch {
-      // ignore cloud sync error and keep local
+      // ignore storage error
     }
-  }
 
-  return folders;
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      try {
+        await supabase.from('app_settings').upsert({
+          id: `${SUPABASE_EMP_WORKSPACE_PREFIX}${cleanCode}`,
+          hub_title: `Employee Workspace ${cleanCode}`,
+          hub_subtitle: 'personal_folders_v1',
+          admin_pin: '0000',
+          wallpaper_id: 'aurora-night',
+          custom_wallpaper_url: JSON.stringify(folders),
+          icon_shape: 'squircle',
+          grid_columns: 4,
+          default_folder_layout: 'detail-2col',
+          updated_at: new Date().toISOString(),
+        });
+      } catch {
+        // ignore cloud sync error and keep local
+      }
+    }
+
+    return folders;
+  } finally {
+    endWorkspaceMutation();
+  }
 }
 
 export async function createPersonalFolder(
@@ -980,7 +1005,7 @@ export async function syncEmployeeWorkspaceFromCloud(employeeCode?: string): Pro
   const cleanCode = (employeeCode || '').trim();
   const supabase = getSupabaseClient();
 
-  if (!supabase) {
+  if (!supabase || isWorkspaceMutationRecent()) {
     return {
       personalFolders: cleanCode ? getPersonalFoldersForEmployee(cleanCode) : [],
       notes: getAllFolderNotes(),
@@ -998,6 +1023,14 @@ export async function syncEmployeeWorkspaceFromCloud(employeeCode?: string): Pro
       .from('app_settings')
       .select('id, custom_wallpaper_url')
       .in('id', idsToFetch);
+
+    if (isWorkspaceMutationRecent()) {
+      return {
+        personalFolders: cleanCode ? getPersonalFoldersForEmployee(cleanCode) : [],
+        notes: getAllFolderNotes(),
+        employeeFolders: getEmployeeFolders(),
+      };
+    }
 
     if (Array.isArray(data)) {
       for (const row of data) {
@@ -1036,10 +1069,39 @@ export async function syncEmployeeWorkspaceFromCloud(employeeCode?: string): Pro
               row.custom_wallpaper_url
             ) as EmployeePersonalFolder[];
             if (Array.isArray(cloudFolders) && cloudFolders.length > 0) {
-              localStorage.setItem(
-                getPersonalFoldersStorageKey(cleanCode),
-                JSON.stringify(cloudFolders)
-              );
+              // ตรวจสอบไม่ให้ข้อมูล Cloud ที่เก่ากว่าในเครื่องมาทับโฟลเดอร์ที่เพิ่งสร้างใหม่ในเครื่อง
+              const localRaw = localStorage.getItem(getPersonalFoldersStorageKey(cleanCode));
+              let shouldUseCloud = true;
+              if (localRaw) {
+                try {
+                  const localFolders = JSON.parse(localRaw) as EmployeePersonalFolder[];
+                  if (Array.isArray(localFolders) && localFolders.length > 0) {
+                    const latestLocalTime = localFolders.reduce(
+                      (max, f) => (f.updatedAt > max ? f.updatedAt : max),
+                      ''
+                    );
+                    const latestCloudTime = cloudFolders.reduce(
+                      (max, f) => (f.updatedAt > max ? f.updatedAt : max),
+                      ''
+                    );
+                    if (
+                      localFolders.length > cloudFolders.length &&
+                      latestLocalTime >= latestCloudTime
+                    ) {
+                      shouldUseCloud = false;
+                    }
+                  }
+                } catch {
+                  // ignore
+                }
+              }
+
+              if (shouldUseCloud) {
+                localStorage.setItem(
+                  getPersonalFoldersStorageKey(cleanCode),
+                  JSON.stringify(cloudFolders)
+                );
+              }
             }
           } catch {
             // ignore invalid json
