@@ -11,8 +11,6 @@ import {
 import {
   addLinkToEmployeeSheetFolder,
   addLinkToPersonalFolder,
-  buildFolderShareText,
-  buildFolderShareUrl,
   buildLinkItemShareText,
   deleteLinkFromEmployeeSheetFolder,
   formatLinkUpdatedTime,
@@ -28,7 +26,6 @@ import {
   ArrowLeft,
   Copy,
   Check,
-  Share2,
   ExternalLink,
   Search,
   Plus,
@@ -42,7 +39,6 @@ import {
   Lock,
   X,
   CheckCircle2,
-  Link2,
   FolderOpen,
 } from 'lucide-react';
 
@@ -89,8 +85,6 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTopic, setSelectedTopic] = useState<string>('all');
-  const [copiedFolderUrl, setCopiedFolderUrl] = useState(false);
-  const [copiedFolderSummary, setCopiedFolderSummary] = useState(false);
   const [copiedLinkId, setCopiedLinkId] = useState<string | null>(null);
   const [bannerMsg, setBannerMsg] = useState('');
 
@@ -155,16 +149,6 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
     }, 3400);
   };
 
-  // สร้างลิงก์เฉพาะของโฟลเดอร์นี้ (Shareable Deep Link)
-  const shareUrl = buildFolderShareUrl({
-    folderId:
-      mode === 'employee-personal' || mode === 'employee-sheet'
-        ? activeFolderId
-        : undefined,
-    categoryId: mode === 'category' ? activeFolderId : undefined,
-    employeeCode: currentEmployee?.code,
-  });
-
   const employeeItems: EmployeeLinkItem[] =
     mode === 'employee-personal'
       ? personalFolder?.links || []
@@ -198,26 +182,6 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
     const q = searchQuery.trim().toLowerCase();
     return `${link.title} ${link.description} ${link.url}`.toLowerCase().includes(q);
   });
-
-  const handleCopyFolderUrl = () => {
-    navigator.clipboard.writeText(shareUrl);
-    setCopiedFolderUrl(true);
-    showTempBanner('คัดลอกลิงก์เฉพาะของโฟลเดอร์นี้แล้ว! นำไปวางส่งต่อให้เพื่อนร่วมงานได้ทันที');
-    setTimeout(() => setCopiedFolderUrl(false), 2200);
-  };
-
-  const handleCopyFolderSummary = () => {
-    const text = buildFolderShareText({
-      folderName: activeFolderName,
-      description: activeFolderDesc,
-      linkCount: totalItemCount,
-      shareUrl,
-    });
-    navigator.clipboard.writeText(text);
-    setCopiedFolderSummary(true);
-    showTempBanner('คัดลอกข้อความสรุปโฟลเดอร์พร้อมลิงก์เฉพาะแล้ว! วางส่งต่อใน LINE ได้เลย');
-    setTimeout(() => setCopiedFolderSummary(false), 2200);
-  };
 
   const handleCopySingleLink = (
     item: {
@@ -499,42 +463,8 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
             </div>
           </div>
 
-          {/* ปุ่มแชร์ลิงก์เฉพาะของโฟลเดอร์ + ปุ่มจัดการ (ขนาดกะทัดรัด สะอาดตา) */}
+          {/* ปุ่มจัดการโฟลเดอร์ */}
           <div className="flex flex-wrap items-center gap-1.5">
-            <button
-              type="button"
-              onClick={handleCopyFolderUrl}
-              title={`คัดลอกลิงก์เฉพาะของหน้าโฟลเดอร์นี้: ${shareUrl}`}
-              className={`px-2.5 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition ${
-                copiedFolderUrl
-                  ? 'bg-emerald-600 border-emerald-600 text-white'
-                  : isLightTheme
-                  ? 'bg-white hover:bg-sky-50 border-sky-200 text-sky-900 shadow-2xs'
-                  : 'bg-white/10 hover:bg-white/15 border-white/15 text-sky-200'
-              }`}
-            >
-              {copiedFolderUrl ? <Check size={13} /> : <Link2 size={13} />}
-              <span>{copiedFolderUrl ? 'คัดลอกลิงก์แล้ว' : 'ก็อปลิงก์โฟลเดอร์'}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={handleCopyFolderSummary}
-              title="คัดลอกชื่อโฟลเดอร์ + ลิงก์เฉพาะสำหรับส่งต่อใน LINE"
-              className={`px-2.5 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition ${
-                copiedFolderSummary
-                  ? 'bg-emerald-600 border-emerald-600 text-white'
-                  : isLightTheme
-                  ? 'bg-emerald-50 hover:bg-emerald-100 border-emerald-300 text-emerald-900'
-                  : 'bg-emerald-500/15 hover:bg-emerald-500/25 border-emerald-400/30 text-emerald-200'
-              }`}
-            >
-              {copiedFolderSummary ? <Check size={13} /> : <Share2 size={13} />}
-              <span className="hidden xs:inline">
-                {copiedFolderSummary ? 'คัดลอกข้อความแล้ว' : 'ส่งต่อ LINE'}
-              </span>
-            </button>
-
             {mode === 'employee-sheet' && sheetFolder && (
               <a
                 href={getEmployeeLinksSheetUrl(sheetFolder.gid)}
