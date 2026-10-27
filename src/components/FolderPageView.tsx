@@ -43,6 +43,7 @@ import {
   X,
   CheckCircle2,
   Link2,
+  FolderOpen,
 } from 'lucide-react';
 
 interface FolderPageViewProps {
@@ -93,7 +94,7 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
   const [copiedLinkId, setCopiedLinkId] = useState<string | null>(null);
   const [bannerMsg, setBannerMsg] = useState('');
 
-  // ฟอร์มเพิ่มหรือเปลี่ยนลิงก์เฉพาะในโฟลเดอร์ (รองรับทั้งโฟลเดอร์แผ่นงานและโฟลเดอร์ส่วนตัว)
+  // ฟอร์มเพิ่มหรือเปลี่ยนลิงก์เฉพาะในโฟลเดอร์
   const [isLinkFormOpen, setIsLinkFormOpen] = useState(false);
   const [editingLinkId, setEditingLinkId] = useState<string | null>(null);
   const [titleInput, setTitleInput] = useState('');
@@ -105,6 +106,10 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
   const [isEditingFolderMeta, setIsEditingFolderMeta] = useState(false);
   const [folderNameEdit, setFolderNameEdit] = useState('');
   const [folderDescEdit, setFolderDescEdit] = useState('');
+
+  // สิทธิ์การแก้ไข: พนักงานทั่วไปแก้ไขได้เฉพาะใน "โฟลเดอร์ส่วนตัว" เท่านั้น ส่วนกลางต้องเปิดโหมดแอดมิน (isEditMode)
+  const canManageCurrentFolder =
+    mode === 'employee-personal' ? Boolean(currentEmployee) : isEditMode;
 
   const activeFolderId =
     mode === 'employee-personal'
@@ -243,6 +248,7 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
   };
 
   const handleOpenAddLink = () => {
+    if (!canManageCurrentFolder) return;
     if (mode === 'category' && category) {
       onAddCategoryLink?.(category.id);
       return;
@@ -257,6 +263,7 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
 
   const handleOpenEditLink = (item: EmployeeLinkItem, e?: React.MouseEvent) => {
     e?.stopPropagation();
+    if (!canManageCurrentFolder) return;
     setEditingLinkId(item.id);
     setTitleInput(item.title);
     setUrlInput(item.url);
@@ -267,6 +274,7 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
 
   const handleSaveEmployeeLink = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canManageCurrentFolder) return;
     if (!titleInput.trim() || !urlInput.trim()) return;
 
     const actorLabel = currentEmployee
@@ -287,7 +295,7 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
             updatedBy: actorLabel,
           }
         );
-        showTempBanner(`เปลี่ยนลิงก์ "${titleInput.trim()}" และบันทึกเวลาอัปเดตเรียบร้อยแล้ว!`);
+        showTempBanner(`เปลี่ยนลิงก์ "${titleInput.trim()}" ในโฟลเดอร์ส่วนตัวเรียบร้อยแล้ว!`);
       } else {
         await addLinkToPersonalFolder(currentEmployee.code, personalFolder.id, {
           title: titleInput,
@@ -298,7 +306,7 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
         });
         showTempBanner(`เพิ่มลิงก์ "${titleInput.trim()}" ลงในโฟลเดอร์ส่วนตัวแล้ว!`);
       }
-    } else if (mode === 'employee-sheet' && sheetFolder) {
+    } else if (mode === 'employee-sheet' && sheetFolder && isEditMode) {
       if (editingLinkId) {
         await updateEmployeeSheetFolderLink(sheetFolder.id, editingLinkId, {
           title: titleInput,
@@ -327,13 +335,14 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
 
   const handleDeleteEmployeeLink = async (item: EmployeeLinkItem, e?: React.MouseEvent) => {
     e?.stopPropagation();
+    if (!canManageCurrentFolder) return;
     if (!window.confirm(`ต้องการลบลิงก์ "${item.title}" ออกจากโฟลเดอร์นี้ใช่หรือไม่?`)) {
       return;
     }
 
     if (mode === 'employee-personal' && personalFolder && currentEmployee) {
       await removeLinkFromPersonalFolder(currentEmployee.code, personalFolder.id, item.id);
-    } else if (mode === 'employee-sheet' && sheetFolder) {
+    } else if (mode === 'employee-sheet' && sheetFolder && isEditMode) {
       await deleteLinkFromEmployeeSheetFolder(sheetFolder.id, item.id);
     }
 
@@ -357,7 +366,7 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
       bgStyle: item.bgStyle,
       updatedBy: actorLabel,
     });
-    showTempBanner(`⭐ เก็บลิงก์ "${item.title}" เข้าโฟลเดอร์ส่วนตัว "${target.name}" แล้ว!`);
+    showTempBanner(`⭐ เก็บลิงก์ "${item.title}" เข้าโฟลเดอร์ส่วนตัว "${target.name}" แล้ว! (แก้ไขลิงก์ต่อในโฟลเดอร์ส่วนตัวได้ทันที)`);
     onRefreshWorkspace();
   };
 
@@ -373,100 +382,179 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
     onRefreshWorkspace();
   };
 
+  // ค่าที่เลือกอยู่ใน Dropdown สลับโฟลเดอร์ด่วน
+  const currentSwitcherValue =
+    mode === 'category' ? `cat:${activeFolderId}` : `folder:${activeFolderId}`;
+
+  const handleSwitcherSelectChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const val = e.target.value;
+    if (val.startsWith('cat:')) {
+      onSwitchFolder({ categoryId: val.slice(4) });
+    } else if (val.startsWith('folder:')) {
+      onSwitchFolder({ folderId: val.slice(7) });
+    }
+  };
+
   return (
-    <div className="space-y-5 animate-fade-in">
-      {/* แถบนำทางด้านบนของหน้าโฟลเดอร์ (Breadcrumb + ปุ่มย้อนกลับหน้าหลัก + ตัวสลับโฟลเดอร์ด่วน) */}
+    <div className="space-y-4 animate-fade-in">
+      {/* =====================================================================
+          กล่องหัวข้อโฟลเดอร์แบบรวมศูนย์ (สะอาด ไม่ซ้อนหลายกล่อง และสลับโฟลเดอร์ด่วนไม่ล้นจอ)
+         ===================================================================== */}
       <div
-        className={`p-4 sm:p-5 rounded-3xl backdrop-blur-2xl border shadow-xl transition-colors space-y-4 ${
+        className={`rounded-3xl backdrop-blur-2xl border shadow-lg transition-colors overflow-hidden ${
           isLightTheme
-            ? 'bg-white/90 border-sky-200 text-slate-800'
-            : 'bg-slate-950/75 border-white/15 text-white'
+            ? 'bg-white/95 border-sky-200/90 text-slate-800 shadow-sky-900/5'
+            : 'bg-slate-950/80 border-white/15 text-white'
         }`}
       >
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3 min-w-0">
+        {/* แถบบนสุด: ปุ่มกลับหน้าหลัก + Dropdown สลับโฟลเดอร์ด่วน (ไม่ล้นจอ) + ปุ่มแชร์/จัดการ */}
+        <div
+          className={`px-4 sm:px-5 py-3 border-b flex flex-wrap items-center justify-between gap-2.5 ${
+            isLightTheme
+              ? 'bg-sky-50/70 border-sky-100'
+              : 'bg-slate-900/60 border-white/10'
+          }`}
+        >
+          <div className="flex flex-wrap items-center gap-2 min-w-0">
             <button
               type="button"
               onClick={onBackToHome}
-              className={`px-3.5 py-2 rounded-2xl text-xs sm:text-sm font-bold flex items-center gap-2 transition shrink-0 shadow-sm ${
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition shrink-0 shadow-2xs ${
                 isLightTheme
                   ? 'bg-sky-600 hover:bg-sky-500 text-white'
                   : 'bg-white/12 hover:bg-sky-600 text-white border border-white/15'
               }`}
             >
-              <ArrowLeft size={16} />
-              <span>กลับหน้าโฮมหลัก</span>
+              <ArrowLeft size={14} />
+              <span>หน้าหลัก</span>
             </button>
 
-            <div className="flex items-center gap-3 min-w-0">
-              <div
-                className="w-11 h-11 rounded-2xl flex items-center justify-center text-white shadow-lg shrink-0"
-                style={{
-                  background: `linear-gradient(135deg, ${activeFolderColor} 0%, #1e293b 100%)`,
-                }}
-              >
-                {mode === 'employee-personal' ? (
-                  <Star size={21} className="fill-white/90" />
-                ) : (
-                  <Folder size={21} />
-                )}
-              </div>
-
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  {mode === 'employee-personal' && (
-                    <span
-                      className={`px-2 py-0.5 rounded-full border text-[10px] font-bold flex items-center gap-1 ${
-                        isLightTheme
-                          ? 'bg-pink-100 border-pink-300 text-pink-900'
-                          : 'bg-pink-500/20 border-pink-400/30 text-pink-300'
-                      }`}
-                    >
-                      <Lock size={10} /> โฟลเดอร์ส่วนตัว ({currentEmployee?.code})
-                    </span>
-                  )}
-                  <h1
-                    className={`text-base sm:text-xl font-bold truncate ${
-                      isLightTheme ? 'text-slate-900' : 'text-white'
-                    }`}
-                  >
-                    {activeFolderName}
-                  </h1>
-                  <span
-                    className={`px-2.5 py-0.5 rounded-full text-xs font-bold border ${
-                      isLightTheme
-                        ? 'bg-sky-100 border-sky-300 text-sky-800'
-                        : 'bg-sky-500/20 border-sky-400/30 text-sky-300'
-                    }`}
-                  >
-                    {totalItemCount} ลิงก์
-                  </span>
-                </div>
-                <p
-                  className={`text-xs mt-0.5 line-clamp-2 ${
-                    isLightTheme ? 'text-slate-600' : 'text-slate-300'
+            {/* ตัวเลือกสลับโฟลเดอร์ด่วนแบบ Dropdown กะทัดรัด ไม่ล้นขอบขวา */}
+            <div className="flex items-center gap-1.5 min-w-0">
+              <div className="relative flex items-center">
+                <FolderOpen
+                  size={13}
+                  className={`absolute left-2.5 pointer-events-none ${
+                    isLightTheme ? 'text-sky-700' : 'text-sky-400'
+                  }`}
+                />
+                <select
+                  aria-label="สลับโฟลเดอร์ด่วน"
+                  value={currentSwitcherValue}
+                  onChange={handleSwitcherSelectChange}
+                  className={`pl-7 pr-7 py-1.5 rounded-xl border text-xs font-bold cursor-pointer focus:outline-none transition max-w-[220px] sm:max-w-[270px] truncate ${
+                    isLightTheme
+                      ? 'bg-white hover:bg-sky-50 border-sky-200 text-slate-800 focus:border-sky-500'
+                      : 'bg-slate-900 hover:bg-slate-800 border-white/15 text-white focus:border-sky-400'
                   }`}
                 >
-                  {activeFolderDesc}
-                </p>
+                  {currentEmployee && allPersonalFolders.length > 0 && (
+                    <optgroup label="⭐ โฟลเดอร์ส่วนตัวของฉัน (แก้ไขได้)">
+                      {allPersonalFolders.map((pf) => (
+                        <option key={pf.id} value={`folder:${pf.id}`}>
+                          ⭐ {pf.name} ({pf.links.length} ลิงก์)
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {currentEmployee && allSheetFolders.length > 0 && (
+                    <optgroup label="📂 โฟลเดอร์แผ่นงานพนักงาน (17 แผ่นงาน)">
+                      {allSheetFolders.map((sf) => (
+                        <option key={sf.id} value={`folder:${sf.id}`}>
+                          📂 {sf.sheetName} ({sf.links.length} ลิงก์)
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {allCategories.length > 0 && (
+                    <optgroup label="🗂️ หมวดหมู่ระบบงานกลาง">
+                      {allCategories.map((cat) => (
+                        <option key={cat.id} value={`cat:${cat.id}`}>
+                          🗂️ {cat.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                </select>
               </div>
+
+              {/* ปุ่มลัดสลับเข้าโฟลเดอร์ส่วนตัวใน 1 คลิก */}
+              {currentEmployee &&
+                allPersonalFolders.length > 0 &&
+                mode !== 'employee-personal' && (
+                  <button
+                    type="button"
+                    onClick={() => onSwitchFolder({ folderId: allPersonalFolders[0].id })}
+                    className={`hidden sm:inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl border text-xs font-bold transition ${
+                      isLightTheme
+                        ? 'bg-pink-50 hover:bg-pink-100 border-pink-300 text-pink-900'
+                        : 'bg-pink-500/15 hover:bg-pink-500/25 border-pink-400/30 text-pink-200'
+                    }`}
+                    title="สลับไปที่โฟลเดอร์ส่วนตัวเพื่อเพิ่มหรือแก้ไขลิงก์ของฉัน"
+                  >
+                    <Star size={12} className="fill-current text-pink-500" />
+                    <span>โฟลเดอร์ส่วนตัว</span>
+                  </button>
+                )}
             </div>
           </div>
 
-          {/* ปุ่มเพิ่มลิงก์ใหม่ / เปิด Google Sheet ต้นฉบับ */}
-          <div className="flex flex-wrap items-center gap-2">
-            {(mode !== 'category' || isEditMode) && (
-              <button
-                type="button"
-                onClick={handleOpenAddLink}
-                className="px-3.5 py-2 rounded-2xl bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-xs font-bold text-white flex items-center gap-1.5 shadow-lg shadow-sky-500/20 transition"
+          {/* ปุ่มแชร์ลิงก์เฉพาะของโฟลเดอร์ + ปุ่มจัดการ (ขนาดกะทัดรัด สะอาดตา) */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              onClick={handleCopyFolderUrl}
+              title={`คัดลอกลิงก์เฉพาะของหน้าโฟลเดอร์นี้: ${shareUrl}`}
+              className={`px-2.5 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition ${
+                copiedFolderUrl
+                  ? 'bg-emerald-600 border-emerald-600 text-white'
+                  : isLightTheme
+                  ? 'bg-white hover:bg-sky-50 border-sky-200 text-sky-900 shadow-2xs'
+                  : 'bg-white/10 hover:bg-white/15 border-white/15 text-sky-200'
+              }`}
+            >
+              {copiedFolderUrl ? <Check size={13} /> : <Link2 size={13} />}
+              <span>{copiedFolderUrl ? 'คัดลอกลิงก์แล้ว' : 'ก็อปลิงก์โฟลเดอร์'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleCopyFolderSummary}
+              title="คัดลอกชื่อโฟลเดอร์ + ลิงก์เฉพาะสำหรับส่งต่อใน LINE"
+              className={`px-2.5 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition ${
+                copiedFolderSummary
+                  ? 'bg-emerald-600 border-emerald-600 text-white'
+                  : isLightTheme
+                  ? 'bg-emerald-50 hover:bg-emerald-100 border-emerald-300 text-emerald-900'
+                  : 'bg-emerald-500/15 hover:bg-emerald-500/25 border-emerald-400/30 text-emerald-200'
+              }`}
+            >
+              {copiedFolderSummary ? <Check size={13} /> : <Share2 size={13} />}
+              <span className="hidden xs:inline">
+                {copiedFolderSummary ? 'คัดลอกข้อความแล้ว' : 'ส่งต่อ LINE'}
+              </span>
+            </button>
+
+            {mode === 'employee-sheet' && sheetFolder && (
+              <a
+                href={getEmployeeLinksSheetUrl(sheetFolder.gid)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`px-2.5 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1 transition ${
+                  isLightTheme
+                    ? 'bg-white hover:bg-slate-50 border-slate-300 text-slate-700'
+                    : 'bg-white/10 hover:bg-white/15 border-white/15 text-slate-200'
+                }`}
+                title="เปิดแผ่นงาน Google Sheet ต้นฉบับ"
               >
-                <Plus size={15} />
-                <span>+ เพิ่มลิงก์ในโฟลเดอร์นี้</span>
-              </button>
+                <FileSpreadsheet size={13} className="text-emerald-600" />
+                <span className="hidden md:inline">ชีตต้นฉบับ</span>
+                <ExternalLink size={11} />
+              </a>
             )}
 
-            {mode === 'employee-personal' && personalFolder && (
+            {/* ปุ่มแก้ไขชื่อโฟลเดอร์ & เพิ่มลิงก์ (แสดงเฉพาะโฟลเดอร์ส่วนตัว หรือเมื่อแอดมินปลดล็อกเท่านั้น) */}
+            {mode === 'employee-personal' && personalFolder && canManageCurrentFolder && (
               <button
                 type="button"
                 onClick={() => {
@@ -474,443 +562,147 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
                   setFolderDescEdit(personalFolder.description);
                   setIsEditingFolderMeta((prev) => !prev);
                 }}
-                className={`px-3 py-2 rounded-2xl border text-xs font-semibold flex items-center gap-1.5 transition ${
+                className={`px-2.5 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1 transition ${
                   isLightTheme
-                    ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700'
+                    ? 'bg-white hover:bg-slate-100 border-slate-300 text-slate-700'
                     : 'bg-white/10 hover:bg-white/20 border-white/15 text-slate-200'
                 }`}
               >
-                <Pencil size={13} />
-                <span>แก้ไขชื่อโฟลเดอร์</span>
+                <Pencil size={12} />
+                <span className="hidden sm:inline">ตั้งชื่อโฟลเดอร์</span>
               </button>
             )}
 
-            {mode === 'employee-sheet' && sheetFolder && (
-              <a
-                href={getEmployeeLinksSheetUrl(sheetFolder.gid)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={`px-3 py-2 rounded-2xl border text-xs font-bold flex items-center gap-1.5 transition ${
-                  isLightTheme
-                    ? 'bg-emerald-100 hover:bg-emerald-200 border-emerald-300 text-emerald-900 shadow-xs'
-                    : 'bg-emerald-500/15 hover:bg-emerald-500/25 border-emerald-400/30 text-emerald-300'
-                }`}
+            {canManageCurrentFolder && (
+              <button
+                type="button"
+                onClick={handleOpenAddLink}
+                className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-xs font-bold text-white flex items-center gap-1 shadow-sm transition"
               >
-                <FileSpreadsheet size={14} />
-                <span>เปิดแผ่นงาน Google Sheet</span>
-                <ExternalLink size={12} />
-              </a>
+                <Plus size={14} />
+                <span>เพิ่มลิงก์</span>
+              </button>
             )}
           </div>
         </div>
 
-        {/* =====================================================================
-            กล่องลิงก์เฉพาะของโฟลเดอร์ (Shareable Folder URL) + ปุ่มก็อปส่งต่อ
-           ===================================================================== */}
-        <div
-          className={`p-3.5 rounded-2xl border flex flex-col md:flex-row md:items-center justify-between gap-3 ${
-            isLightTheme
-              ? 'bg-sky-50/90 border-sky-200/90'
-              : 'bg-slate-900/90 border-sky-400/30'
-          }`}
-        >
-          <div className="flex items-center gap-2.5 min-w-0 flex-1">
-            <div className="w-8 h-8 rounded-xl bg-sky-500/20 border border-sky-400/30 flex items-center justify-center text-sky-400 shrink-0">
-              <Link2 size={16} />
+        {/* แถวหลัก: ชื่อโฟลเดอร์ + ป้ายสิทธิ์การใช้งาน + ช่องค้นหาในแถวเดียวกันบนจอคอมฯ */}
+        <div className="p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="flex items-start sm:items-center gap-3.5 min-w-0">
+            <div
+              className="w-11 h-11 rounded-2xl flex items-center justify-center text-white shadow-md shrink-0"
+              style={{
+                background: `linear-gradient(135deg, ${activeFolderColor} 0%, #1e293b 100%)`,
+              }}
+            >
+              {mode === 'employee-personal' ? (
+                <Star size={20} className="fill-white/90" />
+              ) : (
+                <Folder size={20} />
+              )}
             </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <span
-                  className={`text-[11px] font-bold ${
-                    isLightTheme ? 'text-sky-900' : 'text-sky-300'
+
+            <div className="min-w-0 space-y-0.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1
+                  className={`text-base sm:text-xl font-bold truncate ${
+                    isLightTheme ? 'text-slate-900' : 'text-white'
                   }`}
                 >
-                  ลิงก์เฉพาะของหน้าโฟลเดอร์นี้ (คัดลอกส่งต่อให้เพื่อนเปิดเข้าโฟลเดอร์นี้ได้ทันที):
+                  {activeFolderName}
+                </h1>
+
+                <span
+                  className={`px-2.5 py-0.5 rounded-full text-xs font-extrabold border ${
+                    isLightTheme
+                      ? 'bg-sky-600 border-sky-700 text-white'
+                      : 'bg-sky-500/25 border-sky-400/40 text-sky-200'
+                  }`}
+                >
+                  {totalItemCount} ลิงก์
                 </span>
+
+                {mode === 'employee-personal' ? (
+                  <span
+                    className={`px-2.5 py-0.5 rounded-full border text-[11px] font-bold inline-flex items-center gap-1 ${
+                      isLightTheme
+                        ? 'bg-pink-100 border-pink-300 text-pink-900'
+                        : 'bg-pink-500/20 border-pink-400/30 text-pink-200'
+                    }`}
+                  >
+                    <Pencil size={10} /> โฟลเดอร์ส่วนตัว ({currentEmployee?.code}) • เพิ่ม/แก้ไขลิงก์ได้
+                  </span>
+                ) : !isEditMode ? (
+                  <span
+                    className={`px-2.5 py-0.5 rounded-full border text-[11px] font-semibold inline-flex items-center gap-1 ${
+                      isLightTheme
+                        ? 'bg-slate-100 border-slate-300 text-slate-700'
+                        : 'bg-white/10 border-white/15 text-slate-300'
+                    }`}
+                    title="ข้อมูลส่วนกลางแก้ไขได้เฉพาะแอดมิน พนักงานสามารถกด 'เก็บส่วนตัว' เพื่อนำไปแก้ไขต่อในโฟลเดอร์ส่วนตัวได้"
+                  >
+                    <Lock size={10} /> ส่วนกลาง (อ่านอย่างเดียว)
+                  </span>
+                ) : null}
               </div>
+
               <p
-                className={`text-xs font-mono truncate mt-0.5 select-all ${
-                  isLightTheme ? 'text-slate-700' : 'text-slate-300'
+                className={`text-xs line-clamp-1 ${
+                  isLightTheme ? 'text-slate-600' : 'text-slate-300'
                 }`}
               >
-                {shareUrl}
+                {activeFolderDesc}
               </p>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={handleCopyFolderUrl}
-              className="px-3.5 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold flex items-center gap-1.5 shadow transition"
-            >
-              {copiedFolderUrl ? (
-                <>
-                  <Check size={14} />
-                  <span>คัดลอกลิงก์แล้ว!</span>
-                </>
-              ) : (
-                <>
-                  <Copy size={14} />
-                  <span>ก็อปลิงก์โฟลเดอร์ส่งต่อ</span>
-                </>
-              )}
-            </button>
-
-            <button
-              type="button"
-              onClick={handleCopyFolderSummary}
-              className={`px-3.5 py-2 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition ${
-                isLightTheme
-                  ? 'bg-white hover:bg-emerald-50 border-emerald-300 text-emerald-800'
-                  : 'bg-emerald-500/15 hover:bg-emerald-500/25 border-emerald-400/35 text-emerald-300'
+          {/* ช่องค้นหาในโฟลเดอร์ (วางชิดขวาในแถวเดียวกับชื่อโฟลเดอร์บนจอคอมพิวเตอร์) */}
+          <div className="relative w-full lg:w-80 shrink-0">
+            <Search
+              size={15}
+              className={`absolute left-3.5 top-1/2 -translate-y-1/2 ${
+                isLightTheme ? 'text-sky-600' : 'text-sky-400'
               }`}
-            >
-              {copiedFolderSummary ? (
-                <>
-                  <Check size={14} />
-                  <span>คัดลอกข้อความแล้ว!</span>
-                </>
-              ) : (
-                <>
-                  <Share2 size={14} />
-                  <span>ก็อปข้อความ + ลิงก์ส่ง LINE</span>
-                </>
-              )}
-            </button>
-          </div>
-        </div>
-
-        {/* แถบสลับโฟลเดอร์ด่วน (เปลี่ยนโฟลเดอร์พร้อมเปลี่ยนลิงก์เฉพาะทันที) */}
-        <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-          <span
-            className={`text-[11px] font-bold shrink-0 mr-1 ${
-              isLightTheme ? 'text-slate-700' : 'text-slate-300'
-            }`}
-          >
-            สลับโฟลเดอร์ด่วน:
-          </span>
-
-          {currentEmployee &&
-            allPersonalFolders.map((pf) => {
-              const active = mode === 'employee-personal' && pf.id === activeFolderId;
-              return (
-                <button
-                  key={pf.id}
-                  type="button"
-                  onClick={() => onSwitchFolder({ folderId: pf.id })}
-                  className={`px-2.5 py-1 rounded-xl text-[11px] font-bold whitespace-nowrap flex items-center gap-1 transition ${
-                    active
-                      ? 'bg-pink-600 text-white shadow'
-                      : isLightTheme
-                      ? 'bg-pink-50 hover:bg-pink-100 text-pink-900 border border-pink-300'
-                      : 'bg-pink-500/15 hover:bg-pink-500/25 text-pink-200 border border-pink-400/25'
-                  }`}
-                >
-                  <Star size={11} className="fill-current" />
-                  <span>{pf.name}</span>
-                </button>
-              );
-            })}
-
-          {currentEmployee &&
-            allSheetFolders
-              .filter((sf) => !sf.isArchive)
-              .map((sf) => {
-                const active = mode === 'employee-sheet' && sf.id === activeFolderId;
-                return (
-                  <button
-                    key={sf.id}
-                    type="button"
-                    onClick={() => onSwitchFolder({ folderId: sf.id })}
-                    className={`px-2.5 py-1 rounded-xl text-[11px] font-bold whitespace-nowrap transition ${
-                      active
-                        ? 'bg-sky-600 text-white shadow'
-                        : isLightTheme
-                        ? 'bg-slate-100 hover:bg-sky-100 text-slate-800 border border-slate-300'
-                        : 'bg-white/10 hover:bg-white/20 text-slate-200 border border-white/10'
-                    }`}
-                  >
-                    {sf.sheetName}
-                  </button>
-                );
-              })}
-
-          {mode === 'category' &&
-            allCategories.map((cat) => {
-              const active = cat.id === activeFolderId;
-              return (
-                <button
-                  key={cat.id}
-                  type="button"
-                  onClick={() => onSwitchFolder({ categoryId: cat.id })}
-                  className={`px-2.5 py-1 rounded-xl text-[11px] font-bold whitespace-nowrap transition ${
-                    active
-                      ? 'bg-indigo-600 text-white shadow'
-                      : isLightTheme
-                      ? 'bg-slate-100 hover:bg-indigo-50 text-slate-800 border border-slate-300'
-                      : 'bg-white/10 hover:bg-white/20 text-slate-200 border border-white/10'
-                  }`}
-                >
-                  {cat.name}
-                </button>
-              );
-            })}
-        </div>
-      </div>
-
-      {/* แถบแจ้งเตือนสถานะเมื่อคัดลอกหรือเปลี่ยนลิงก์ */}
-      {bannerMsg && (
-        <div
-          className={`p-3.5 rounded-2xl border text-xs sm:text-sm font-bold flex items-center justify-between gap-2 shadow-lg animate-fade-in ${
-            isLightTheme
-              ? 'bg-emerald-100 border-emerald-300 text-emerald-950'
-              : 'bg-emerald-500/20 border-emerald-400/40 text-emerald-200'
-          }`}
-        >
-          <span className="flex items-center gap-2">
-            <CheckCircle2
-              size={16}
-              className={isLightTheme ? 'text-emerald-700 shrink-0' : 'text-emerald-400 shrink-0'}
-            />
-            <span>{bannerMsg}</span>
-          </span>
-          <button
-            type="button"
-            onClick={() => setBannerMsg('')}
-            className={isLightTheme ? 'text-emerald-800 hover:text-emerald-950' : 'text-emerald-300 hover:text-white'}
-          >
-            <X size={15} />
-          </button>
-        </div>
-      )}
-
-      {/* ฟอร์มแก้ไขชื่อโฟลเดอร์ส่วนตัว */}
-      {isEditingFolderMeta && mode === 'employee-personal' && (
-        <form
-          onSubmit={handleSaveFolderMeta}
-          className="p-4 rounded-2xl bg-slate-950 border-2 border-pink-500/40 space-y-3 animate-fade-in"
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-pink-300">
-              แก้ไขชื่อและคำอธิบายโฟลเดอร์ส่วนตัว
-            </span>
-            <button
-              type="button"
-              onClick={() => setIsEditingFolderMeta(false)}
-              className="p-1 rounded-lg bg-white/10 text-slate-300"
-            >
-              <X size={14} />
-            </button>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <input
-              type="text"
-              required
-              value={folderNameEdit}
-              onChange={(e) => setFolderNameEdit(e.target.value)}
-              placeholder="ชื่อโฟลเดอร์ส่วนตัว"
-              className="px-3.5 py-2 rounded-xl bg-slate-900 border border-white/15 text-xs sm:text-sm text-white"
             />
             <input
               type="text"
-              value={folderDescEdit}
-              onChange={(e) => setFolderDescEdit(e.target.value)}
-              placeholder="คำอธิบายโฟลเดอร์"
-              className="px-3.5 py-2 rounded-xl bg-slate-900 border border-white/15 text-xs sm:text-sm text-white"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder={`ค้นหาใน "${activeFolderName}"...`}
+              className={`w-full pl-9 pr-8 py-2 rounded-xl border text-xs sm:text-sm focus:outline-none transition ${
+                isLightTheme
+                  ? 'bg-slate-50/90 focus:bg-white border-sky-200 focus:border-sky-500 text-slate-800 placeholder:text-slate-400'
+                  : 'bg-slate-900 border-white/15 focus:border-sky-400 text-white placeholder:text-slate-500'
+              }`}
             />
-          </div>
-          <div className="flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => setIsEditingFolderMeta(false)}
-              className="px-3 py-1.5 rounded-xl bg-white/10 text-xs text-slate-300"
-            >
-              ยกเลิก
-            </button>
-            <button
-              type="submit"
-              className="px-4 py-1.5 rounded-xl bg-pink-600 hover:bg-pink-500 text-xs font-bold text-white"
-            >
-              บันทึกชื่อโฟลเดอร์
-            </button>
-          </div>
-        </form>
-      )}
-
-      {/* สมุดโน้ตประจำโฟลเดอร์ */}
-      <FolderNotesSection
-        folderId={mode === 'category' ? `cat-${activeFolderId}` : activeFolderId}
-        folderName={activeFolderName}
-        employeeCode={currentEmployee ? currentEmployee.code : isEditMode ? 'admin' : 'public'}
-        authorName={
-          currentEmployee
-            ? `${currentEmployee.firstName} (${currentEmployee.code})`
-            : isEditMode
-            ? 'ผู้ดูแลระบบ (Admin)'
-            : 'ผู้ใช้งาน'
-        }
-        isPersonalFolder={mode === 'employee-personal'}
-        onNotesChanged={onRefreshWorkspace}
-      />
-
-      {/* ฟอร์มเพิ่มลิงก์ใหม่ หรือเปลี่ยนลิงก์เฉพาะ พร้อมบันทึกเวลาอัปเดตอัตโนมัติ */}
-      {isLinkFormOpen && mode !== 'category' && (
-        <form
-          onSubmit={handleSaveEmployeeLink}
-          className="p-4 sm:p-5 rounded-3xl bg-slate-950 border-2 border-sky-500/50 space-y-3.5 shadow-2xl animate-fade-in"
-        >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Clock size={16} className="text-sky-400" />
-              <h4 className="text-xs sm:text-sm font-bold text-white">
-                {editingLinkId
-                  ? 'เปลี่ยนลิงก์เฉพาะ / แก้ไขรายละเอียดลิงก์ (ระบบจะบันทึกวัน-เวลาที่เปลี่ยนลิงก์ให้อัตโนมัติ)'
-                  : `เพิ่มลิงก์ใหม่ลงในโฟลเดอร์ "${activeFolderName}"`}
-              </h4>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                setIsLinkFormOpen(false);
-                setEditingLinkId(null);
-              }}
-              className="p-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300"
-            >
-              <X size={15} />
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
-            <div className="sm:col-span-5">
-              <label className="block text-[11px] font-medium text-slate-300 mb-1">
-                ชื่อลิงก์ / รายงาน *
-              </label>
-              <input
-                type="text"
-                required
-                value={titleInput}
-                onChange={(e) => setTitleInput(e.target.value)}
-                placeholder="เช่น รายงานจัดส่งตรงเวลา เดือนล่าสุด..."
-                className="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-white/15 focus:border-sky-400 text-xs sm:text-sm text-white focus:outline-none"
-              />
-            </div>
-
-            <div className="sm:col-span-5">
-              <label className="block text-[11px] font-medium text-slate-300 mb-1">
-                URL ลิงก์เฉพาะใหม่ *
-              </label>
-              <input
-                type="text"
-                required
-                value={urlInput}
-                onChange={(e) => setUrlInput(e.target.value)}
-                placeholder="https://docs.google.com/spreadsheets/..."
-                className="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-sky-400/40 focus:border-sky-400 text-xs sm:text-sm text-white font-mono focus:outline-none"
-              />
-            </div>
-
-            <div className="sm:col-span-2">
-              <label className="block text-[11px] font-medium text-slate-300 mb-1">
-                หัวข้อ / ข้อประเมิน
-              </label>
-              <input
-                type="text"
-                value={topicInput}
-                onChange={(e) => setTopicInput(e.target.value)}
-                placeholder="เช่น ข้อ 1.1"
-                className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-white/15 focus:border-sky-400 text-xs sm:text-sm text-white focus:outline-none"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-[11px] font-medium text-slate-300 mb-1">
-              คำอธิบายการใช้งาน / หมายเหตุการเปลี่ยนลิงก์
-            </label>
-            <input
-              type="text"
-              value={descInput}
-              onChange={(e) => setDescInput(e.target.value)}
-              placeholder="เช่น อัปเดตลิงก์ชีตประจำเดือนใหม่ / ส่งข้อมูลก่อน 11:00 น."
-              className="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-white/15 focus:border-sky-400 text-xs sm:text-sm text-white focus:outline-none"
-            />
-          </div>
-
-          <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-            <span className="text-[11px] text-amber-300 flex items-center gap-1.5">
-              <Clock size={13} />
-              <span>
-                เมื่อกดบันทึก ระบบจะประทับเวลาเปลี่ยนลิงก์ล่าสุด ({formatLinkUpdatedTime(new Date().toISOString())} น.) ให้ทันที
-              </span>
-            </span>
-
-            <div className="flex items-center gap-2">
+            {searchQuery && (
               <button
                 type="button"
-                onClick={() => {
-                  setIsLinkFormOpen(false);
-                  setEditingLinkId(null);
-                }}
-                className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-xs text-slate-300"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
               >
-                ยกเลิก
+                <X size={14} />
               </button>
-              <button
-                type="submit"
-                className="px-4 py-2 rounded-xl bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-xs font-bold text-white shadow"
-              >
-                {editingLinkId ? 'บันทึกการเปลี่ยนลิงก์ & เวลาอัปเดต' : 'บันทึกลิงก์ลงโฟลเดอร์'}
-              </button>
-            </div>
+            )}
           </div>
-        </form>
-      )}
-
-      {/* แถบค้นหาในโฟลเดอร์ + ตัวกรองหัวข้อย่อย */}
-      <div
-        className={`p-4 rounded-3xl backdrop-blur-2xl border shadow-lg space-y-3 ${
-          isLightTheme
-            ? 'bg-white/85 border-sky-200/90'
-            : 'bg-slate-950/65 border-white/15'
-        }`}
-      >
-        <div className="relative">
-          <Search
-            size={16}
-            className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sky-400"
-          />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={`ค้นหาลิงก์หรือคำอธิบายในโฟลเดอร์ "${activeFolderName}"...`}
-            className={`w-full pl-10 pr-9 py-2.5 rounded-2xl border text-xs sm:text-sm focus:outline-none ${
-              isLightTheme
-                ? 'bg-white border-sky-200 focus:border-sky-500 text-slate-800 placeholder:text-slate-400'
-                : 'bg-slate-900 border-white/15 focus:border-sky-400 text-white placeholder:text-slate-500'
-            }`}
-          />
-          {searchQuery && (
-            <button
-              type="button"
-              onClick={() => setSearchQuery('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
-            >
-              <X size={14} />
-            </button>
-          )}
         </div>
 
+        {/* แถบตัวกรองหัวข้อย่อย (แสดงครบทุกหัวข้อ เช่น Link มาตรฐาน 69 ทั้ง 38 หัวข้อ) */}
         {topics.length > 1 && (
-          <div className="space-y-2">
+          <div
+            className={`px-4 sm:px-5 py-3 border-t space-y-2 ${
+              isLightTheme
+                ? 'bg-slate-50/80 border-sky-100'
+                : 'bg-slate-900/45 border-white/10'
+            }`}
+          >
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span
                 className={`text-[11px] font-bold ${
                   isLightTheme ? 'text-slate-700' : 'text-slate-300'
                 }`}
               >
-                เลือกกรองตามหัวข้อ ({topics.length} หัวข้อทั้งหมดในแผ่นงานนี้):
+                กรองตามหัวข้อ ({topics.length} หัวข้อ):
               </span>
               {selectedTopic !== 'all' && (
                 <button
@@ -929,11 +721,11 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
               <button
                 type="button"
                 onClick={() => setSelectedTopic('all')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition border ${
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold whitespace-nowrap transition border ${
                   selectedTopic === 'all'
-                    ? 'bg-sky-600 border-sky-700 text-white shadow'
+                    ? 'bg-sky-600 border-sky-700 text-white shadow-xs'
                     : isLightTheme
-                    ? 'bg-slate-100 hover:bg-sky-100 border-slate-300 text-slate-900'
+                    ? 'bg-white hover:bg-sky-100 border-slate-300 text-slate-900'
                     : 'bg-white/10 hover:bg-white/20 border-white/15 text-white'
                 }`}
               >
@@ -948,12 +740,16 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
                     key={topic}
                     type="button"
                     onClick={() => setSelectedTopic(topic)}
-                    title={subTopicLabel ? `ข้อ ${topic}: ${subTopicLabel} (${topicItems.length} ลิงก์)` : `หัวข้อ ${topic} (${topicItems.length} ลิงก์)`}
-                    className={`px-2.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition border flex items-center gap-1 ${
+                    title={
+                      subTopicLabel
+                        ? `หัวข้อ ${topic}: ${subTopicLabel} (${topicItems.length} ลิงก์)`
+                        : `หัวข้อ ${topic} (${topicItems.length} ลิงก์)`
+                    }
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold whitespace-nowrap transition border flex items-center gap-1 ${
                       isSelected
-                        ? 'bg-sky-600 border-sky-700 text-white shadow-md'
+                        ? 'bg-sky-600 border-sky-700 text-white shadow-xs'
                         : isLightTheme
-                        ? 'bg-sky-50 hover:bg-sky-100 border-sky-300 text-sky-950 shadow-2xs'
+                        ? 'bg-white hover:bg-sky-50 border-sky-300 text-sky-950 shadow-2xs'
                         : 'bg-slate-900 hover:bg-sky-500/25 border-sky-400/35 text-sky-200'
                     }`}
                   >
@@ -963,7 +759,7 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
                         isSelected
                           ? 'bg-white/25 text-white'
                           : isLightTheme
-                          ? 'bg-sky-200/90 text-sky-950'
+                          ? 'bg-sky-100 text-sky-900'
                           : 'bg-sky-500/30 text-sky-100'
                       }`}
                     >
@@ -976,7 +772,7 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
 
             {selectedTopic !== 'all' && (
               <div
-                className={`px-3.5 py-2 rounded-xl border text-xs font-bold flex items-center justify-between gap-2 ${
+                className={`px-3 py-1.5 rounded-xl border text-xs font-bold flex items-center justify-between gap-2 ${
                   isLightTheme
                     ? 'bg-sky-100/90 border-sky-300 text-sky-950'
                     : 'bg-sky-500/15 border-sky-400/35 text-sky-200'
@@ -995,26 +791,313 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
         )}
       </div>
 
-      {/* ตารางรายการลิงก์แบบ 2 คอลัมน์ พร้อมเวลาเปลี่ยนลิงก์ล่าสุด & ปุ่มก็อปส่งต่อ */}
-      <div className="space-y-2.5">
+      {/* แถบแจ้งเตือนสถานะเมื่อคัดลอกหรือบันทึก */}
+      {bannerMsg && (
         <div
-          className={`hidden sm:grid grid-cols-12 gap-3 px-4 py-2.5 rounded-2xl border text-xs font-semibold ${
+          className={`p-3 rounded-2xl border text-xs sm:text-sm font-bold flex items-center justify-between gap-2 shadow-md animate-fade-in ${
             isLightTheme
-              ? 'bg-sky-100/90 border-sky-200 text-sky-900'
+              ? 'bg-emerald-100 border-emerald-300 text-emerald-950'
+              : 'bg-emerald-500/20 border-emerald-400/40 text-emerald-200'
+          }`}
+        >
+          <span className="flex items-center gap-2">
+            <CheckCircle2
+              size={16}
+              className={isLightTheme ? 'text-emerald-700 shrink-0' : 'text-emerald-400 shrink-0'}
+            />
+            <span>{bannerMsg}</span>
+          </span>
+          <button
+            type="button"
+            onClick={() => setBannerMsg('')}
+            className={
+              isLightTheme ? 'text-emerald-800 hover:text-emerald-950' : 'text-emerald-300 hover:text-white'
+            }
+          >
+            <X size={15} />
+          </button>
+        </div>
+      )}
+
+      {/* ฟอร์มแก้ไขชื่อโฟลเดอร์ส่วนตัว */}
+      {isEditingFolderMeta && mode === 'employee-personal' && canManageCurrentFolder && (
+        <form
+          onSubmit={handleSaveFolderMeta}
+          className={`p-4 rounded-2xl border-2 space-y-3 animate-fade-in ${
+            isLightTheme
+              ? 'bg-white border-pink-300 text-slate-800 shadow-md'
+              : 'bg-slate-950 border-pink-500/40 text-white'
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span
+              className={`text-xs font-bold ${
+                isLightTheme ? 'text-pink-800' : 'text-pink-300'
+              }`}
+            >
+              แก้ไขชื่อและคำอธิบายโฟลเดอร์ส่วนตัว
+            </span>
+            <button
+              type="button"
+              onClick={() => setIsEditingFolderMeta(false)}
+              className={`p-1 rounded-lg ${
+                isLightTheme ? 'bg-slate-100 text-slate-600' : 'bg-white/10 text-slate-300'
+              }`}
+            >
+              <X size={14} />
+            </button>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <input
+              type="text"
+              required
+              value={folderNameEdit}
+              onChange={(e) => setFolderNameEdit(e.target.value)}
+              placeholder="ชื่อโฟลเดอร์ส่วนตัว"
+              className={`px-3.5 py-2 rounded-xl border text-xs sm:text-sm ${
+                isLightTheme
+                  ? 'bg-slate-50 border-slate-300 text-slate-900'
+                  : 'bg-slate-900 border-white/15 text-white'
+              }`}
+            />
+            <input
+              type="text"
+              value={folderDescEdit}
+              onChange={(e) => setFolderDescEdit(e.target.value)}
+              placeholder="คำอธิบายโฟลเดอร์"
+              className={`px-3.5 py-2 rounded-xl border text-xs sm:text-sm ${
+                isLightTheme
+                  ? 'bg-slate-50 border-slate-300 text-slate-900'
+                  : 'bg-slate-900 border-white/15 text-white'
+              }`}
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setIsEditingFolderMeta(false)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold ${
+                isLightTheme ? 'bg-slate-100 text-slate-700' : 'bg-white/10 text-slate-300'
+              }`}
+            >
+              ยกเลิก
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-1.5 rounded-xl bg-pink-600 hover:bg-pink-500 text-xs font-bold text-white"
+            >
+              บันทึกชื่อโฟลเดอร์
+            </button>
+          </div>
+        </form>
+      )}
+
+      {/* สมุดโน้ตประจำโฟลเดอร์ (แก้ไขได้เฉพาะโฟลเดอร์ส่วนตัว หรือเมื่อแอดมินปลดล็อกเท่านั้น) */}
+      <FolderNotesSection
+        folderId={mode === 'category' ? `cat-${activeFolderId}` : activeFolderId}
+        folderName={activeFolderName}
+        employeeCode={currentEmployee ? currentEmployee.code : isEditMode ? 'admin' : 'public'}
+        authorName={
+          currentEmployee
+            ? `${currentEmployee.firstName} (${currentEmployee.code})`
+            : isEditMode
+            ? 'ผู้ดูแลระบบ (Admin)'
+            : 'ผู้ใช้งาน'
+        }
+        isPersonalFolder={mode === 'employee-personal'}
+        canEdit={canManageCurrentFolder}
+        isLightTheme={isLightTheme}
+        onNotesChanged={onRefreshWorkspace}
+      />
+
+      {/* ฟอร์มเพิ่มลิงก์ใหม่ หรือเปลี่ยนลิงก์ (อนุญาตเฉพาะโฟลเดอร์ส่วนตัว หรือแอดมินเท่านั้น) */}
+      {isLinkFormOpen && mode !== 'category' && canManageCurrentFolder && (
+        <form
+          onSubmit={handleSaveEmployeeLink}
+          className={`p-4 sm:p-5 rounded-3xl border-2 space-y-3.5 shadow-xl animate-fade-in ${
+            isLightTheme
+              ? 'bg-white border-sky-300 text-slate-800'
+              : 'bg-slate-950 border-sky-500/50 text-white'
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Clock size={16} className={isLightTheme ? 'text-sky-600' : 'text-sky-400'} />
+              <h4 className="text-xs sm:text-sm font-bold">
+                {editingLinkId
+                  ? 'แก้ไขรายละเอียดลิงก์ (บันทึกวัน-เวลาที่เปลี่ยนลิงก์ให้อัตโนมัติ)'
+                  : `เพิ่มลิงก์ใหม่ลงในโฟลเดอร์ "${activeFolderName}"`}
+              </h4>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setIsLinkFormOpen(false);
+                setEditingLinkId(null);
+              }}
+              className={`p-1.5 rounded-xl ${
+                isLightTheme
+                  ? 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                  : 'bg-white/10 hover:bg-white/20 text-slate-300'
+              }`}
+            >
+              <X size={15} />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+            <div className="sm:col-span-5">
+              <label
+                className={`block text-[11px] font-bold mb-1 ${
+                  isLightTheme ? 'text-slate-700' : 'text-slate-300'
+                }`}
+              >
+                ชื่อลิงก์ / รายงาน *
+              </label>
+              <input
+                type="text"
+                required
+                value={titleInput}
+                onChange={(e) => setTitleInput(e.target.value)}
+                placeholder="เช่น รายงานจัดส่งตรงเวลา เดือนล่าสุด..."
+                className={`w-full px-3.5 py-2 rounded-xl border text-xs sm:text-sm focus:outline-none ${
+                  isLightTheme
+                    ? 'bg-slate-50 border-slate-300 focus:border-sky-500 text-slate-900'
+                    : 'bg-slate-900 border-white/15 focus:border-sky-400 text-white'
+                }`}
+              />
+            </div>
+
+            <div className="sm:col-span-5">
+              <label
+                className={`block text-[11px] font-bold mb-1 ${
+                  isLightTheme ? 'text-slate-700' : 'text-slate-300'
+                }`}
+              >
+                URL ลิงก์เฉพาะ *
+              </label>
+              <input
+                type="text"
+                required
+                value={urlInput}
+                onChange={(e) => setUrlInput(e.target.value)}
+                placeholder="https://docs.google.com/spreadsheets/..."
+                className={`w-full px-3.5 py-2 rounded-xl border text-xs sm:text-sm font-mono focus:outline-none ${
+                  isLightTheme
+                    ? 'bg-slate-50 border-sky-300 focus:border-sky-500 text-slate-900'
+                    : 'bg-slate-900 border-sky-400/40 focus:border-sky-400 text-white'
+                }`}
+              />
+            </div>
+
+            <div className="sm:col-span-2">
+              <label
+                className={`block text-[11px] font-bold mb-1 ${
+                  isLightTheme ? 'text-slate-700' : 'text-slate-300'
+                }`}
+              >
+                หัวข้อ / ป้ายกำกับ
+              </label>
+              <input
+                type="text"
+                value={topicInput}
+                onChange={(e) => setTopicInput(e.target.value)}
+                placeholder="เช่น งานเช้า"
+                className={`w-full px-3 py-2 rounded-xl border text-xs sm:text-sm focus:outline-none ${
+                  isLightTheme
+                    ? 'bg-slate-50 border-slate-300 focus:border-sky-500 text-slate-900'
+                    : 'bg-slate-900 border-white/15 focus:border-sky-400 text-white'
+                }`}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label
+              className={`block text-[11px] font-bold mb-1 ${
+                isLightTheme ? 'text-slate-700' : 'text-slate-300'
+              }`}
+            >
+              คำอธิบายการใช้งาน / หมายเหตุ
+            </label>
+            <input
+              type="text"
+              value={descInput}
+              onChange={(e) => setDescInput(e.target.value)}
+              placeholder="เช่น อัปเดตลิงก์ชีตประจำเดือนใหม่ / ส่งข้อมูลก่อน 11:00 น."
+              className={`w-full px-3.5 py-2 rounded-xl border text-xs sm:text-sm focus:outline-none ${
+                isLightTheme
+                  ? 'bg-slate-50 border-slate-300 focus:border-sky-500 text-slate-900'
+                  : 'bg-slate-900 border-white/15 focus:border-sky-400 text-white'
+              }`}
+            />
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+            <span
+              className={`text-[11px] font-semibold flex items-center gap-1.5 ${
+                isLightTheme ? 'text-amber-800' : 'text-amber-300'
+              }`}
+            >
+              <Clock size={13} />
+              <span>
+                ประทับเวลาเปลี่ยนลิงก์ล่าสุดอัตโนมัติ ({formatLinkUpdatedTime(new Date().toISOString())} น.)
+              </span>
+            </span>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsLinkFormOpen(false);
+                  setEditingLinkId(null);
+                }}
+                className={`px-3.5 py-2 rounded-xl text-xs font-semibold ${
+                  isLightTheme
+                    ? 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                    : 'bg-white/10 hover:bg-white/20 text-slate-300'
+                }`}
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-2 rounded-xl bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-xs font-bold text-white shadow"
+              >
+                {editingLinkId ? 'บันทึกการแก้ไขลิงก์' : 'บันทึกลิงก์ลงโฟลเดอร์'}
+              </button>
+            </div>
+          </div>
+        </form>
+      )}
+
+      {/* =====================================================================
+          ตารางรายการลิงก์แบบสะอาดตาบนจอคอมพิวเตอร์
+         ===================================================================== */}
+      <div className="space-y-2">
+        <div
+          className={`hidden sm:grid grid-cols-12 gap-3 px-4 py-2.5 rounded-2xl border text-xs font-bold ${
+            isLightTheme
+              ? 'bg-sky-100/80 border-sky-200 text-sky-950'
               : 'bg-slate-950/85 border-white/15 text-sky-300'
           }`}
         >
-          <div className="col-span-5">
-            คอลัมน์ที่ 1 : เว็บ / ลิงก์รายงาน ({activeFolderName})
-          </div>
-          <div className="col-span-7">
-            คอลัมน์ที่ 2 : คำอธิบาย, เวลาเปลี่ยนลิงก์ล่าสุด & ปุ่มคัดลอกส่งต่อ
+          <div className="col-span-5">ชื่อระบบ / รายงาน ({activeFolderName})</div>
+          <div className="col-span-7 flex items-center justify-between">
+            <span>คำอธิบายการใช้งาน</span>
+            <span>คำสั่งด่วน</span>
           </div>
         </div>
 
         {mode === 'category' ? (
           filteredCategoryLinks.length === 0 ? (
-            <div className="p-8 rounded-3xl bg-slate-950/60 border border-white/10 text-center text-xs text-slate-400">
+            <div
+              className={`p-8 rounded-3xl border text-center text-xs font-medium ${
+                isLightTheme
+                  ? 'bg-white/90 border-sky-200 text-slate-500'
+                  : 'bg-slate-950/60 border-white/10 text-slate-400'
+              }`}
+            >
               ไม่พบลิงก์ในหมวดหมู่นี้
             </div>
           ) : (
@@ -1022,13 +1105,17 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
               <div
                 key={link.id}
                 onClick={() => window.open(link.url, '_blank', 'noopener,noreferrer')}
-                className={`group grid grid-cols-12 gap-3 items-center p-4 rounded-2xl backdrop-blur-xl border shadow-md cursor-pointer transition-all ${
+                className={`group grid grid-cols-12 gap-3 items-center p-3.5 sm:px-4 sm:py-3 rounded-2xl backdrop-blur-xl border shadow-xs cursor-pointer transition-all ${
                   isLightTheme
-                    ? 'bg-white/90 hover:bg-white border-sky-200/90 hover:border-sky-400'
+                    ? 'bg-white/95 hover:bg-white border-sky-200/80 hover:border-sky-400 hover:shadow-md'
                     : 'bg-slate-950/80 hover:bg-slate-900 border-white/10 hover:border-sky-400/50'
                 }`}
               >
-                <div className="col-span-12 sm:col-span-5 flex items-center gap-3 min-w-0 sm:border-r sm:border-white/10 sm:pr-3">
+                <div
+                  className={`col-span-12 sm:col-span-5 flex items-center gap-3 min-w-0 sm:border-r sm:pr-3 ${
+                    isLightTheme ? 'sm:border-slate-200/80' : 'sm:border-white/10'
+                  }`}
+                >
                   <IconRenderer
                     iconType={link.icon_type}
                     iconName={link.icon_name}
@@ -1044,13 +1131,19 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
                   <div className="min-w-0">
                     <p
                       className={`text-xs sm:text-sm font-bold truncate ${
-                        isLightTheme ? 'text-slate-900' : 'text-white'
+                        isLightTheme
+                          ? 'text-slate-900 group-hover:text-sky-700'
+                          : 'text-white group-hover:text-sky-300'
                       }`}
                     >
                       {link.title}
                     </p>
-                    <span className="inline-flex items-center gap-1 text-[10px] text-sky-400">
-                      คลิกเปิดลิงก์ <ExternalLink size={10} />
+                    <span
+                      className={`inline-flex items-center gap-1 text-[10px] font-semibold ${
+                        isLightTheme ? 'text-sky-700' : 'text-sky-400'
+                      }`}
+                    >
+                      เปิดลิงก์ <ExternalLink size={10} />
                     </span>
                   </div>
                 </div>
@@ -1059,13 +1152,10 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
                   <div className="min-w-0">
                     <p
                       className={`text-xs sm:text-sm leading-relaxed ${
-                        isLightTheme ? 'text-slate-700' : 'text-slate-200'
+                        isLightTheme ? 'text-slate-700 font-medium' : 'text-slate-200'
                       }`}
                     >
                       {link.description || 'คลิกเพื่อเปิดใช้งานระบบ'}
-                    </p>
-                    <p className="text-[10px] font-mono text-slate-400 truncate mt-0.5">
-                      {link.url}
                     </p>
                   </div>
 
@@ -1087,15 +1177,20 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
                       }
                       className={`px-2.5 py-1.5 rounded-xl border text-[11px] font-bold flex items-center gap-1 transition ${
                         isLightTheme
-                          ? 'bg-sky-100 hover:bg-sky-200 border-sky-300 text-sky-900'
+                          ? 'bg-sky-50 hover:bg-sky-100 border-sky-300 text-sky-950'
                           : 'bg-sky-500/15 hover:bg-sky-500/30 border-sky-400/30 text-sky-200'
                       }`}
                       title="คัดลอกลิงก์พร้อมรายละเอียดส่งต่อ"
                     >
                       {copiedLinkId === link.id ? (
                         <>
-                          <Check size={12} className={isLightTheme ? 'text-emerald-700' : 'text-emerald-400'} />
-                          <span className={isLightTheme ? 'text-emerald-800' : 'text-emerald-300'}>ก็อปแล้ว</span>
+                          <Check
+                            size={12}
+                            className={isLightTheme ? 'text-emerald-700' : 'text-emerald-400'}
+                          />
+                          <span className={isLightTheme ? 'text-emerald-800' : 'text-emerald-300'}>
+                            ก็อปแล้ว
+                          </span>
                         </>
                       ) : (
                         <>
@@ -1105,6 +1200,7 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
                       )}
                     </button>
 
+                    {/* ปุ่มแก้ไขและลบลิงก์ส่วนกลาง แสดงเฉพาะเมื่อแอดมินปลดล็อก (isEditMode) เท่านั้น */}
                     {isEditMode && (
                       <>
                         <button
@@ -1113,8 +1209,12 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
                             e.stopPropagation();
                             onEditCategoryLink?.(link);
                           }}
-                          className="p-2 rounded-xl bg-indigo-500/20 hover:bg-indigo-500/35 text-indigo-300"
-                          title="แก้ไขลิงก์"
+                          className={`p-2 rounded-xl border ${
+                            isLightTheme
+                              ? 'bg-indigo-50 hover:bg-indigo-100 border-indigo-200 text-indigo-800'
+                              : 'bg-indigo-500/20 hover:bg-indigo-500/35 border-indigo-400/30 text-indigo-300'
+                          }`}
+                          title="แก้ไขลิงก์ (แอดมิน)"
                         >
                           <Pencil size={13} />
                         </button>
@@ -1124,8 +1224,12 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
                             e.stopPropagation();
                             onDeleteCategoryLink?.(link);
                           }}
-                          className="p-2 rounded-xl bg-rose-500/20 hover:bg-rose-500/35 text-rose-300"
-                          title="ลบลิงก์"
+                          className={`p-2 rounded-xl border ${
+                            isLightTheme
+                              ? 'bg-rose-50 hover:bg-rose-100 border-rose-200 text-rose-800'
+                              : 'bg-rose-500/20 hover:bg-rose-500/35 border-rose-400/30 text-rose-300'
+                          }`}
+                          title="ลบลิงก์ (แอดมิน)"
                         >
                           <Trash2 size={13} />
                         </button>
@@ -1137,18 +1241,26 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
             ))
           )
         ) : filteredEmployeeItems.length === 0 ? (
-          <div className="p-8 rounded-3xl bg-slate-950/70 border border-dashed border-white/15 text-center space-y-3">
-            <p className="text-xs sm:text-sm text-slate-300 font-medium">
+          <div
+            className={`p-8 rounded-3xl border border-dashed text-center space-y-3 ${
+              isLightTheme
+                ? 'bg-white/90 border-sky-200 text-slate-600'
+                : 'bg-slate-950/70 border-white/15 text-slate-300'
+            }`}
+          >
+            <p className="text-xs sm:text-sm font-medium">
               ยังไม่มีลิงก์ในโฟลเดอร์นี้ หรือไม่พบลิงก์ที่ตรงกับคำค้นหา
             </p>
-            <button
-              type="button"
-              onClick={handleOpenAddLink}
-              className="px-4 py-2 rounded-xl bg-gradient-to-r from-sky-500 to-indigo-600 text-xs font-bold text-white inline-flex items-center gap-1.5 shadow"
-            >
-              <Plus size={14} />
-              <span>เพิ่มลิงก์รายการแรกในโฟลเดอร์นี้</span>
-            </button>
+            {canManageCurrentFolder && (
+              <button
+                type="button"
+                onClick={handleOpenAddLink}
+                className="px-4 py-2 rounded-xl bg-gradient-to-r from-sky-500 to-indigo-600 text-xs font-bold text-white inline-flex items-center gap-1.5 shadow"
+              >
+                <Plus size={14} />
+                <span>เพิ่มลิงก์รายการแรกในโฟลเดอร์นี้</span>
+              </button>
+            )}
           </div>
         ) : (
           filteredEmployeeItems.map((item) => {
@@ -1157,14 +1269,18 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
               <div
                 key={item.id}
                 onClick={() => window.open(item.url, '_blank', 'noopener,noreferrer')}
-                className={`group grid grid-cols-12 gap-3 items-center p-3.5 sm:p-4 rounded-2xl backdrop-blur-xl border shadow-md cursor-pointer transition-all ${
+                className={`group grid grid-cols-12 gap-3 items-center p-3.5 sm:px-4 sm:py-3 rounded-2xl backdrop-blur-xl border shadow-xs cursor-pointer transition-all ${
                   isLightTheme
-                    ? 'bg-white/90 hover:bg-white border-sky-200/90 hover:border-sky-400'
+                    ? 'bg-white/95 hover:bg-white border-sky-200/80 hover:border-sky-400 hover:shadow-md'
                     : 'bg-slate-950/80 hover:bg-slate-900 border-white/10 hover:border-sky-400/50'
                 }`}
               >
                 {/* คอลัมน์ที่ 1: ไอคอน + ป้ายหัวข้อ + ชื่อลิงก์ + เวลาเปลี่ยนลิงก์ล่าสุด */}
-                <div className="col-span-12 sm:col-span-5 flex items-center gap-3 min-w-0 sm:border-r sm:border-white/10 sm:pr-3">
+                <div
+                  className={`col-span-12 sm:col-span-5 flex items-center gap-3 min-w-0 sm:border-r sm:pr-3 ${
+                    isLightTheme ? 'sm:border-slate-200/80' : 'sm:border-white/10'
+                  }`}
+                >
                   <div className="shrink-0 transition-transform group-hover:scale-105">
                     <IconRenderer
                       iconType="library"
@@ -1195,7 +1311,7 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
                       )}
                       {item.subTopic && item.subTopic !== item.codeOrTopic && (
                         <span
-                          className={`px-2 py-0.5 rounded-md border text-[10px] font-bold truncate max-w-[230px] sm:max-w-[280px] ${
+                          className={`px-2 py-0.5 rounded-md border text-[10px] font-bold truncate max-w-[220px] sm:max-w-[260px] ${
                             isLightTheme
                               ? 'bg-indigo-50 border-indigo-200 text-indigo-950'
                               : 'bg-indigo-500/20 border-indigo-400/30 text-indigo-200'
@@ -1246,41 +1362,39 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
                   </div>
                 </div>
 
-                {/* คอลัมน์ที่ 2: คำอธิบาย + ปุ่มเปลี่ยนลิงก์ & ปุ่มก็อปส่งต่อ */}
+                {/* คอลัมน์ที่ 2: คำอธิบาย + ปุ่มคำสั่งด่วน */}
                 <div className="col-span-12 sm:col-span-7 flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:pl-1 min-w-0">
                   <div className="min-w-0">
                     <p
                       className={`text-xs sm:text-sm leading-relaxed ${
-                        isLightTheme ? 'text-slate-800 font-medium' : 'text-slate-200'
+                        isLightTheme ? 'text-slate-700 font-medium' : 'text-slate-200'
                       }`}
                     >
                       {item.description}
                     </p>
-                    <p
-                      className={`text-[10px] font-mono truncate mt-1 ${
-                        isLightTheme ? 'text-slate-500' : 'text-slate-400'
-                      }`}
-                    >
-                      {item.url}
-                    </p>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-1.5 shrink-0">
-                    {/* ปุ่มก็อปส่งต่อ (คัดลอกชื่อลิงก์ + คำอธิบาย + เวลาอัปเดต + URL) */}
+                    {/* ปุ่มก็อปส่งต่อ (ทุกคนกดคัดลอกไปส่ง LINE ได้) */}
                     <button
                       type="button"
                       onClick={(e) => handleCopySingleLink(item, e)}
                       className={`px-2.5 py-1.5 rounded-xl border text-[11px] font-bold flex items-center gap-1 transition ${
                         isLightTheme
-                          ? 'bg-sky-100 hover:bg-sky-200 border-sky-300 text-sky-950 shadow-2xs'
+                          ? 'bg-sky-50 hover:bg-sky-100 border-sky-300 text-sky-950'
                           : 'bg-sky-500/15 hover:bg-sky-500/30 border-sky-400/30 text-sky-200'
                       }`}
                       title="คัดลอกลิงก์พร้อมคำอธิบายเพื่อส่งต่อใน LINE"
                     >
                       {copiedLinkId === item.id ? (
                         <>
-                          <Check size={12} className={isLightTheme ? 'text-emerald-700' : 'text-emerald-400'} />
-                          <span className={isLightTheme ? 'text-emerald-900' : 'text-emerald-300'}>ก็อปแล้ว!</span>
+                          <Check
+                            size={12}
+                            className={isLightTheme ? 'text-emerald-700' : 'text-emerald-400'}
+                          />
+                          <span className={isLightTheme ? 'text-emerald-900' : 'text-emerald-300'}>
+                            ก็อปแล้ว!
+                          </span>
                         </>
                       ) : (
                         <>
@@ -1290,52 +1404,55 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
                       )}
                     </button>
 
-                    {/* ปุ่มเปลี่ยนลิงก์เฉพาะ / แก้ไขลิงก์ */}
-                    <button
-                      type="button"
-                      onClick={(e) => handleOpenEditLink(item, e)}
-                      className={`px-2.5 py-1.5 rounded-xl border text-[11px] font-bold flex items-center gap-1 transition ${
-                        isLightTheme
-                          ? 'bg-amber-100 hover:bg-amber-200 border-amber-300 text-amber-950 shadow-2xs'
-                          : 'bg-amber-500/15 hover:bg-amber-500/30 border-amber-400/30 text-amber-200'
-                      }`}
-                      title="เปลี่ยนลิงก์ URL ใหม่ หรือแก้ไขคำอธิบาย (พร้อมบันทึกเวลาเปลี่ยนลิงก์)"
-                    >
-                      <Pencil size={12} />
-                      <span>เปลี่ยนลิงก์</span>
-                    </button>
-
-                    {/* ปุ่มเก็บเข้าโฟลเดอร์ส่วนตัว (กรณีดูอยู่ในโฟลเดอร์แผ่นงาน 17 แผ่นงาน) */}
+                    {/* ปุ่มเก็บเข้าโฟลเดอร์ส่วนตัว (กรณีดูอยู่ในโฟลเดอร์แผ่นงานส่วนกลาง 17 แผ่นงาน) */}
                     {mode === 'employee-sheet' && currentEmployee && (
                       <button
                         type="button"
                         onClick={(e) => handleBookmarkToPersonal(item, e)}
                         className={`px-2.5 py-1.5 rounded-xl border text-[11px] font-bold flex items-center gap-1 transition ${
                           isLightTheme
-                            ? 'bg-pink-100 hover:bg-pink-200 border-pink-300 text-pink-950 shadow-2xs'
+                            ? 'bg-pink-50 hover:bg-pink-100 border-pink-300 text-pink-950'
                             : 'bg-pink-500/15 hover:bg-pink-500/30 border-pink-400/30 text-pink-200'
                         }`}
-                        title="เก็บลิงก์นี้เข้าโฟลเดอร์ส่วนตัวของฉัน"
+                        title="คัดลอกลิงก์นี้ไปเก็บไว้ในโฟลเดอร์ส่วนตัวของฉัน (แก้ไขต่อในโฟลเดอร์ส่วนตัวได้)"
                       >
                         <BookmarkPlus size={12} />
-                        <span className="hidden lg:inline">เก็บส่วนตัว</span>
+                        <span>เก็บส่วนตัว</span>
                       </button>
                     )}
 
-                    {/* ปุ่มลบลิงก์ (สำหรับโฟลเดอร์ส่วนตัว หรือลิงก์ที่เพิ่มเอง) */}
-                    {(mode === 'employee-personal' || item.isCustomAdded) && (
-                      <button
-                        type="button"
-                        onClick={(e) => handleDeleteEmployeeLink(item, e)}
-                        className={`p-1.5 rounded-xl border transition ${
-                          isLightTheme
-                            ? 'bg-rose-100 hover:bg-rose-200 border-rose-300 text-rose-800'
-                            : 'bg-rose-500/15 hover:bg-rose-500/30 border-rose-400/30 text-rose-300'
-                        }`}
-                        title="ลบลิงก์นี้"
-                      >
-                        <Trash2 size={13} />
-                      </button>
+                    {/* ปุ่มเปลี่ยนลิงก์ & ลบลิงก์: แสดงเฉพาะในโฟลเดอร์ส่วนตัวของพนักงาน หรือเมื่อแอดมินปลดล็อกเท่านั้น */}
+                    {canManageCurrentFolder && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={(e) => handleOpenEditLink(item, e)}
+                          className={`px-2.5 py-1.5 rounded-xl border text-[11px] font-bold flex items-center gap-1 transition ${
+                            isLightTheme
+                              ? 'bg-amber-50 hover:bg-amber-100 border-amber-300 text-amber-950'
+                              : 'bg-amber-500/15 hover:bg-amber-500/30 border-amber-400/30 text-amber-200'
+                          }`}
+                          title="เปลี่ยนลิงก์ URL ใหม่ หรือแก้ไขคำอธิบาย"
+                        >
+                          <Pencil size={12} />
+                          <span>เปลี่ยนลิงก์</span>
+                        </button>
+
+                        {(mode === 'employee-personal' || item.isCustomAdded) && (
+                          <button
+                            type="button"
+                            onClick={(e) => handleDeleteEmployeeLink(item, e)}
+                            className={`p-1.5 rounded-xl border transition ${
+                              isLightTheme
+                                ? 'bg-rose-50 hover:bg-rose-100 border-rose-300 text-rose-800'
+                                : 'bg-rose-500/15 hover:bg-rose-500/30 border-rose-400/30 text-rose-300'
+                            }`}
+                            title="ลบลิงก์นี้"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        )}
+                      </>
                     )}
                   </div>
                 </div>

@@ -1401,7 +1401,7 @@ export const EmployeePortalModal: React.FC<EmployeePortalModalProps> = ({
                       </div>
 
                       {/* ===============================================================
-                          สมุดโน้ตประจำโฟลเดอร์ (แสดงในทุกโฟลเดอร์ ทั้งส่วนตัวและ 17 แผ่นงาน)
+                          สมุดโน้ตประจำโฟลเดอร์ (เพิ่ม/แก้ไขได้เฉพาะโฟลเดอร์ส่วนตัวของพนักงาน)
                          =============================================================== */}
                       <FolderNotesSection
                         folderId={activeFolder.id}
@@ -1409,6 +1409,7 @@ export const EmployeePortalModal: React.FC<EmployeePortalModalProps> = ({
                         employeeCode={currentEmployee.code}
                         authorName={`${currentEmployee.firstName} (${currentEmployee.code})`}
                         isPersonalFolder={isViewingPersonalFolder}
+                        canEdit={isViewingPersonalFolder}
                         onNotesChanged={() => {
                           setNotesCountMap(getFolderNotesCountMap(currentEmployee.code));
                           onWorkspaceChanged?.();

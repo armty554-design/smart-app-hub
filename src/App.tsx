@@ -854,7 +854,7 @@ export function App() {
               className={`p-3.5 rounded-2xl border cursor-pointer transition ${
                 currentEmployee
                   ? isLightTheme
-                    ? 'bg-gradient-to-br from-emerald-50 to-sky-50 hover:from-emerald-100/80 hover:to-sky-100/80 border-emerald-200'
+                    ? 'bg-gradient-to-br from-emerald-50/90 to-sky-50/90 hover:from-emerald-100/80 hover:to-sky-100/80 border-emerald-200 shadow-2xs'
                     : 'bg-gradient-to-br from-emerald-950/60 to-sky-950/50 hover:from-emerald-900/60 hover:to-sky-900/50 border-emerald-400/30'
                   : isLightTheme
                   ? 'bg-sky-50/80 hover:bg-sky-100/80 border-sky-200'
@@ -862,39 +862,82 @@ export function App() {
               }`}
             >
               {currentEmployee ? (
-                <div className="space-y-1.5">
+                <div className="space-y-2">
                   <div className="flex items-center justify-between gap-2">
                     <span
-                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
                         isLightTheme
-                          ? 'bg-emerald-100 text-emerald-800'
+                          ? 'bg-emerald-600 text-white'
                           : 'bg-emerald-500/25 text-emerald-300'
                       }`}
                     >
                       <UserCheck size={11} /> รหัส {currentEmployee.code}
                     </span>
-                    <span
-                      className={`text-[10px] font-medium ${
-                        isLightTheme ? 'text-sky-700' : 'text-sky-300'
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleEmployeeLogout();
+                      }}
+                      title="ออกจากระบบพนักงาน"
+                      className={`px-2 py-0.5 rounded-lg text-[10px] font-bold flex items-center gap-1 transition ${
+                        isLightTheme
+                          ? 'bg-white/90 hover:bg-rose-50 text-slate-600 hover:text-rose-700 border border-slate-200'
+                          : 'bg-white/10 hover:bg-rose-500/25 text-slate-300 hover:text-rose-200'
                       }`}
                     >
-                      ดูบัตรพนักงาน →
-                    </span>
+                      <LogOut size={10} />
+                      <span>ออก</span>
+                    </button>
                   </div>
-                  <p
-                    className={`text-xs font-bold truncate ${
-                      isLightTheme ? 'text-slate-900' : 'text-white'
-                    }`}
-                  >
-                    {currentEmployee.fullName}
-                  </p>
-                  <p
-                    className={`text-[11px] truncate ${
-                      isLightTheme ? 'text-slate-600' : 'text-slate-300'
-                    }`}
-                  >
-                    {currentEmployee.position} • สาขา{currentEmployee.branch}
-                  </p>
+                  <div>
+                    <p
+                      className={`text-xs font-bold truncate ${
+                        isLightTheme ? 'text-slate-900' : 'text-white'
+                      }`}
+                    >
+                      {currentEmployee.fullName}
+                    </p>
+                    <p
+                      className={`text-[11px] truncate ${
+                        isLightTheme ? 'text-slate-600' : 'text-slate-300'
+                      }`}
+                    >
+                      {currentEmployee.position} • สาขา{currentEmployee.branch}
+                    </p>
+                  </div>
+                  {personalFolders.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigateToFolderPage({ folderId: personalFolders[0].id });
+                      }}
+                      className={`w-full px-2.5 py-1.5 rounded-xl border text-[11px] font-bold flex items-center justify-between transition ${
+                        activePageFolder?.folderId === personalFolders[0].id
+                          ? 'bg-pink-600 border-pink-600 text-white shadow-xs'
+                          : isLightTheme
+                          ? 'bg-white hover:bg-pink-50 border-pink-200 text-pink-900'
+                          : 'bg-pink-500/15 hover:bg-pink-500/25 border-pink-400/30 text-pink-200'
+                      }`}
+                    >
+                      <span className="flex items-center gap-1.5 truncate">
+                        <Star size={12} className="fill-current text-pink-500 shrink-0" />
+                        <span className="truncate">โฟลเดอร์ส่วนตัวของฉัน</span>
+                      </span>
+                      <span
+                        className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+                          activePageFolder?.folderId === personalFolders[0].id
+                            ? 'bg-white/25 text-white'
+                            : isLightTheme
+                            ? 'bg-pink-100 text-pink-900'
+                            : 'bg-pink-500/30 text-pink-100'
+                        }`}
+                      >
+                        {personalFolders[0].links.length}
+                      </span>
+                    </button>
+                  )}
                 </div>
               ) : (
                 <div className="flex items-center gap-2.5">
@@ -930,12 +973,14 @@ export function App() {
             {/* รายการหมวดหมู่ / โฟลเดอร์ สำหรับคลิกบนจอคอมพิวเตอร์ */}
             <div className="space-y-1.5">
               <div
-                className={`px-2 flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider mb-2 ${
-                  isLightTheme ? 'text-slate-500' : 'text-slate-400'
+                className={`px-2 flex items-center justify-between text-[11px] font-bold uppercase tracking-wider mb-2 ${
+                  isLightTheme ? 'text-slate-600' : 'text-slate-400'
                 }`}
               >
                 <span>หมวดหมู่ระบบงาน</span>
-                <span>{visibleLinks.length} แอป</span>
+                <span className={isLightTheme ? 'text-sky-800 font-extrabold' : 'text-sky-300 font-bold'}>
+                  {visibleLinks.length} แอป
+                </span>
               </div>
 
               <button
@@ -959,12 +1004,12 @@ export function App() {
                   <span>รวมทุกระบบ (All Apps)</span>
                 </span>
                 <span
-                  className={`px-2 py-0.5 rounded-full text-[10px] ${
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
                     activeCategoryId === 'all' && !isFolderPageOpen
-                      ? 'bg-black/20 text-white'
+                      ? 'bg-white/25 text-white'
                       : isLightTheme
-                      ? 'bg-slate-200/80 text-slate-700'
-                      : 'bg-black/25'
+                      ? 'bg-sky-100 text-sky-900'
+                      : 'bg-white/15 text-white'
                   }`}
                 >
                   {visibleLinks.length}
@@ -1002,12 +1047,12 @@ export function App() {
                         <span className="truncate">{cat.name}</span>
                       </span>
                       <span
-                        className={`px-2 py-0.5 rounded-full text-[10px] shrink-0 ${
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold shrink-0 ${
                           isActive
-                            ? 'bg-black/20 text-white'
+                            ? 'bg-white/25 text-white'
                             : isLightTheme
-                            ? 'bg-slate-200/80 text-slate-700'
-                            : 'bg-black/25'
+                            ? 'bg-sky-100 text-sky-900'
+                            : 'bg-white/15 text-white'
                         }`}
                       >
                         {count}
@@ -1331,10 +1376,10 @@ export function App() {
               </div>
             </div>
 
-        {/* แถบการ์ดข้อมูลพนักงานที่เข้าสู่ระบบ หรือปุ่มเข้าสู่ระบบพนักงาน */}
+        {/* แถบการ์ดข้อมูลพนักงาน (แสดงเฉพาะบนจอมือถือ/แท็บเล็ต เพราะบนคอมฯ มีการ์ดพนักงานบน Sidebar ซ้ายแล้ว) */}
         {currentEmployee ? (
           <div
-            className={`mb-5 p-4 rounded-3xl backdrop-blur-2xl border shadow-xl flex flex-wrap items-center justify-between gap-3 transition-colors ${
+            className={`lg:hidden mb-5 p-4 rounded-3xl backdrop-blur-2xl border shadow-xl flex flex-wrap items-center justify-between gap-3 transition-colors ${
               isLightTheme
                 ? 'bg-gradient-to-r from-white/95 via-sky-50/90 to-emerald-50/90 border-sky-200/90 text-slate-800 shadow-sky-900/5'
                 : 'bg-gradient-to-r from-slate-900/85 via-sky-950/65 to-emerald-950/55 border-sky-400/30 text-white'
@@ -1590,23 +1635,23 @@ export function App() {
               </div>
             </div>
 
-            {/* ส่วนที่ 2: โฟลเดอร์ลิงก์เฉพาะพนักงาน 17 แผ่นงาน */}
+            {/* ส่วนที่ 2: โฟลเดอร์ลิงก์เฉพาะพนักงาน 17 แผ่นงาน (ข้อมูลส่วนกลาง) */}
             <div>
               <div className="flex flex-wrap items-center justify-between gap-2 mb-3.5">
                 <div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <FolderOpen size={18} className="text-sky-500" />
                     <h3 className="text-sm sm:text-base font-bold">
                       โฟลเดอร์ลิงก์เฉพาะพนักงาน (แยกตามแผ่นงาน)
                     </h3>
                     <span
-                      className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                      className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold border ${
                         isLightTheme
-                          ? 'bg-sky-100 border-sky-300 text-sky-800'
+                          ? 'bg-sky-600 border-sky-700 text-white'
                           : 'bg-sky-500/20 border-sky-400/30 text-sky-300'
                       }`}
                     >
-                      17 โฟลเดอร์ • 581 ลิงก์ + สมุดโน้ตในโฟลเดอร์
+                      17 โฟลเดอร์ส่วนกลาง
                     </span>
                   </div>
                   <p
@@ -1614,7 +1659,7 @@ export function App() {
                       isLightTheme ? 'text-slate-600' : 'text-slate-300'
                     }`}
                   >
-                    คลิกที่โฟลเดอร์แผ่นงานเพื่อเปลี่ยนหน้าเข้าสู่โฟลเดอร์ พร้อมลิงก์เฉพาะสำหรับก็อปส่งต่อและบันทึกเวลาเปลี่ยนลิงก์
+                    คลิกที่โฟลเดอร์เพื่อเปิดดูลิงก์ คัดลอกส่งต่อใน LINE หรือกดเก็บลิงก์เข้าโฟลเดอร์ส่วนตัวของฉัน
                   </p>
                 </div>
 
