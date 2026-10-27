@@ -415,7 +415,13 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   {mode === 'employee-personal' && (
-                    <span className="px-2 py-0.5 rounded-full bg-pink-500/20 border border-pink-400/30 text-[10px] font-bold text-pink-300 flex items-center gap-1">
+                    <span
+                      className={`px-2 py-0.5 rounded-full border text-[10px] font-bold flex items-center gap-1 ${
+                        isLightTheme
+                          ? 'bg-pink-100 border-pink-300 text-pink-900'
+                          : 'bg-pink-500/20 border-pink-400/30 text-pink-300'
+                      }`}
+                    >
                       <Lock size={10} /> โฟลเดอร์ส่วนตัว ({currentEmployee?.code})
                     </span>
                   )}
@@ -484,7 +490,11 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
                 href={getEmployeeLinksSheetUrl(sheetFolder.gid)}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="px-3 py-2 rounded-2xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-400/30 text-xs font-semibold text-emerald-300 flex items-center gap-1.5 transition"
+                className={`px-3 py-2 rounded-2xl border text-xs font-bold flex items-center gap-1.5 transition ${
+                  isLightTheme
+                    ? 'bg-emerald-100 hover:bg-emerald-200 border-emerald-300 text-emerald-900 shadow-xs'
+                    : 'bg-emerald-500/15 hover:bg-emerald-500/25 border-emerald-400/30 text-emerald-300'
+                }`}
               >
                 <FileSpreadsheet size={14} />
                 <span>เปิดแผ่นงาน Google Sheet</span>
@@ -572,10 +582,10 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
         </div>
 
         {/* แถบสลับโฟลเดอร์ด่วน (เปลี่ยนโฟลเดอร์พร้อมเปลี่ยนลิงก์เฉพาะทันที) */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+        <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
           <span
-            className={`text-[11px] font-semibold shrink-0 mr-1 ${
-              isLightTheme ? 'text-slate-500' : 'text-slate-400'
+            className={`text-[11px] font-bold shrink-0 mr-1 ${
+              isLightTheme ? 'text-slate-700' : 'text-slate-300'
             }`}
           >
             สลับโฟลเดอร์ด่วน:
@@ -589,11 +599,11 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
                   key={pf.id}
                   type="button"
                   onClick={() => onSwitchFolder({ folderId: pf.id })}
-                  className={`px-2.5 py-1 rounded-xl text-[11px] font-semibold whitespace-nowrap flex items-center gap-1 transition ${
+                  className={`px-2.5 py-1 rounded-xl text-[11px] font-bold whitespace-nowrap flex items-center gap-1 transition ${
                     active
                       ? 'bg-pink-600 text-white shadow'
                       : isLightTheme
-                      ? 'bg-pink-50 hover:bg-pink-100 text-pink-800 border border-pink-200'
+                      ? 'bg-pink-50 hover:bg-pink-100 text-pink-900 border border-pink-300'
                       : 'bg-pink-500/15 hover:bg-pink-500/25 text-pink-200 border border-pink-400/25'
                   }`}
                 >
@@ -613,12 +623,12 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
                     key={sf.id}
                     type="button"
                     onClick={() => onSwitchFolder({ folderId: sf.id })}
-                    className={`px-2.5 py-1 rounded-xl text-[11px] font-semibold whitespace-nowrap transition ${
+                    className={`px-2.5 py-1 rounded-xl text-[11px] font-bold whitespace-nowrap transition ${
                       active
                         ? 'bg-sky-600 text-white shadow'
                         : isLightTheme
-                        ? 'bg-slate-100 hover:bg-sky-100 text-slate-700'
-                        : 'bg-white/8 hover:bg-white/15 text-slate-300'
+                        ? 'bg-slate-100 hover:bg-sky-100 text-slate-800 border border-slate-300'
+                        : 'bg-white/10 hover:bg-white/20 text-slate-200 border border-white/10'
                     }`}
                   >
                     {sf.sheetName}
@@ -634,12 +644,12 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
                   key={cat.id}
                   type="button"
                   onClick={() => onSwitchFolder({ categoryId: cat.id })}
-                  className={`px-2.5 py-1 rounded-xl text-[11px] font-semibold whitespace-nowrap transition ${
+                  className={`px-2.5 py-1 rounded-xl text-[11px] font-bold whitespace-nowrap transition ${
                     active
                       ? 'bg-indigo-600 text-white shadow'
                       : isLightTheme
-                      ? 'bg-slate-100 hover:bg-indigo-50 text-slate-700'
-                      : 'bg-white/8 hover:bg-white/15 text-slate-300'
+                      ? 'bg-slate-100 hover:bg-indigo-50 text-slate-800 border border-slate-300'
+                      : 'bg-white/10 hover:bg-white/20 text-slate-200 border border-white/10'
                   }`}
                 >
                   {cat.name}
@@ -651,15 +661,24 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
 
       {/* แถบแจ้งเตือนสถานะเมื่อคัดลอกหรือเปลี่ยนลิงก์ */}
       {bannerMsg && (
-        <div className="p-3.5 rounded-2xl bg-emerald-500/20 border border-emerald-400/40 text-xs sm:text-sm font-semibold text-emerald-200 flex items-center justify-between gap-2 shadow-lg animate-fade-in">
+        <div
+          className={`p-3.5 rounded-2xl border text-xs sm:text-sm font-bold flex items-center justify-between gap-2 shadow-lg animate-fade-in ${
+            isLightTheme
+              ? 'bg-emerald-100 border-emerald-300 text-emerald-950'
+              : 'bg-emerald-500/20 border-emerald-400/40 text-emerald-200'
+          }`}
+        >
           <span className="flex items-center gap-2">
-            <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
+            <CheckCircle2
+              size={16}
+              className={isLightTheme ? 'text-emerald-700 shrink-0' : 'text-emerald-400 shrink-0'}
+            />
             <span>{bannerMsg}</span>
           </span>
           <button
             type="button"
             onClick={() => setBannerMsg('')}
-            className="text-emerald-300 hover:text-white"
+            className={isLightTheme ? 'text-emerald-800 hover:text-emerald-950' : 'text-emerald-300 hover:text-white'}
           >
             <X size={15} />
           </button>
@@ -884,36 +903,94 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
         </div>
 
         {topics.length > 1 && (
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
-            <button
-              type="button"
-              onClick={() => setSelectedTopic('all')}
-              className={`px-3 py-1 rounded-xl text-xs font-semibold whitespace-nowrap transition ${
-                selectedTopic === 'all'
-                  ? 'bg-sky-600 text-white shadow'
-                  : isLightTheme
-                  ? 'bg-slate-100 hover:bg-sky-50 text-slate-700'
-                  : 'bg-white/8 hover:bg-white/15 text-slate-300'
-              }`}
-            >
-              ทุกหัวข้อ ({employeeItems.length})
-            </button>
-            {topics.map((topic) => (
-              <button
-                key={topic}
-                type="button"
-                onClick={() => setSelectedTopic(topic)}
-                className={`px-3 py-1 rounded-xl text-xs font-medium whitespace-nowrap transition ${
-                  selectedTopic === topic
-                    ? 'bg-sky-600 text-white font-semibold shadow'
-                    : isLightTheme
-                    ? 'bg-slate-100 hover:bg-sky-50 text-slate-700'
-                    : 'bg-white/8 hover:bg-white/15 text-slate-300'
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span
+                className={`text-[11px] font-bold ${
+                  isLightTheme ? 'text-slate-700' : 'text-slate-300'
                 }`}
               >
-                {topic}
+                เลือกกรองตามหัวข้อ ({topics.length} หัวข้อทั้งหมดในแผ่นงานนี้):
+              </span>
+              {selectedTopic !== 'all' && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedTopic('all')}
+                  className={`text-[11px] font-bold underline ${
+                    isLightTheme ? 'text-sky-700 hover:text-sky-900' : 'text-sky-300 hover:text-white'
+                  }`}
+                >
+                  แสดงครบทุกหัวข้อ ({employeeItems.length} ลิงก์)
+                </button>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setSelectedTopic('all')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition border ${
+                  selectedTopic === 'all'
+                    ? 'bg-sky-600 border-sky-700 text-white shadow'
+                    : isLightTheme
+                    ? 'bg-slate-100 hover:bg-sky-100 border-slate-300 text-slate-900'
+                    : 'bg-white/10 hover:bg-white/20 border-white/15 text-white'
+                }`}
+              >
+                ทุกหัวข้อ ({employeeItems.length})
               </button>
-            ))}
+              {topics.map((topic) => {
+                const topicItems = employeeItems.filter((item) => item.codeOrTopic === topic);
+                const subTopicLabel = topicItems.find((item) => item.subTopic)?.subTopic || '';
+                const isSelected = selectedTopic === topic;
+                return (
+                  <button
+                    key={topic}
+                    type="button"
+                    onClick={() => setSelectedTopic(topic)}
+                    title={subTopicLabel ? `ข้อ ${topic}: ${subTopicLabel} (${topicItems.length} ลิงก์)` : `หัวข้อ ${topic} (${topicItems.length} ลิงก์)`}
+                    className={`px-2.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition border flex items-center gap-1 ${
+                      isSelected
+                        ? 'bg-sky-600 border-sky-700 text-white shadow-md'
+                        : isLightTheme
+                        ? 'bg-sky-50 hover:bg-sky-100 border-sky-300 text-sky-950 shadow-2xs'
+                        : 'bg-slate-900 hover:bg-sky-500/25 border-sky-400/35 text-sky-200'
+                    }`}
+                  >
+                    <span>{topic}</span>
+                    <span
+                      className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+                        isSelected
+                          ? 'bg-white/25 text-white'
+                          : isLightTheme
+                          ? 'bg-sky-200/90 text-sky-950'
+                          : 'bg-sky-500/30 text-sky-100'
+                      }`}
+                    >
+                      {topicItems.length}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {selectedTopic !== 'all' && (
+              <div
+                className={`px-3.5 py-2 rounded-xl border text-xs font-bold flex items-center justify-between gap-2 ${
+                  isLightTheme
+                    ? 'bg-sky-100/90 border-sky-300 text-sky-950'
+                    : 'bg-sky-500/15 border-sky-400/35 text-sky-200'
+                }`}
+              >
+                <span>
+                  กำลังดูหัวข้อ <span className="underline">{selectedTopic}</span>
+                  {employeeItems.find((i) => i.codeOrTopic === selectedTopic && i.subTopic)?.subTopic
+                    ? ` : ${employeeItems.find((i) => i.codeOrTopic === selectedTopic && i.subTopic)?.subTopic}`
+                    : ''}{' '}
+                  ({filteredEmployeeItems.length} ลิงก์)
+                </span>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -1008,13 +1085,17 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
                           e
                         )
                       }
-                      className="px-2.5 py-1.5 rounded-xl bg-sky-500/15 hover:bg-sky-500/30 border border-sky-400/30 text-[11px] font-bold text-sky-300 flex items-center gap-1 transition"
+                      className={`px-2.5 py-1.5 rounded-xl border text-[11px] font-bold flex items-center gap-1 transition ${
+                        isLightTheme
+                          ? 'bg-sky-100 hover:bg-sky-200 border-sky-300 text-sky-900'
+                          : 'bg-sky-500/15 hover:bg-sky-500/30 border-sky-400/30 text-sky-200'
+                      }`}
                       title="คัดลอกลิงก์พร้อมรายละเอียดส่งต่อ"
                     >
                       {copiedLinkId === link.id ? (
                         <>
-                          <Check size={12} className="text-emerald-400" />
-                          <span className="text-emerald-300">ก็อปแล้ว</span>
+                          <Check size={12} className={isLightTheme ? 'text-emerald-700' : 'text-emerald-400'} />
+                          <span className={isLightTheme ? 'text-emerald-800' : 'text-emerald-300'}>ก็อปแล้ว</span>
                         </>
                       ) : (
                         <>
@@ -1100,18 +1181,36 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
                   </div>
 
                   <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-1.5 mb-0.5">
+                    <div className="flex flex-wrap items-center gap-1.5 mb-1">
                       {item.codeOrTopic && (
-                        <span className="px-2 py-0.5 rounded-md bg-sky-500/20 border border-sky-400/30 text-sky-300 text-[10px] font-bold">
+                        <span
+                          className={`px-2 py-0.5 rounded-md border text-[11px] font-extrabold tracking-tight ${
+                            isLightTheme
+                              ? 'bg-sky-600 border-sky-700 text-white shadow-2xs'
+                              : 'bg-sky-500/25 border-sky-400/40 text-sky-200'
+                          }`}
+                        >
                           {item.codeOrTopic}
+                        </span>
+                      )}
+                      {item.subTopic && item.subTopic !== item.codeOrTopic && (
+                        <span
+                          className={`px-2 py-0.5 rounded-md border text-[10px] font-bold truncate max-w-[230px] sm:max-w-[280px] ${
+                            isLightTheme
+                              ? 'bg-indigo-50 border-indigo-200 text-indigo-950'
+                              : 'bg-indigo-500/20 border-indigo-400/30 text-indigo-200'
+                          }`}
+                          title={item.subTopic}
+                        >
+                          {item.subTopic}
                         </span>
                       )}
                       {item.badge && (
                         <span
-                          className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                          className={`px-1.5 py-0.5 rounded border text-[10px] font-bold ${
                             isLightTheme
-                              ? 'bg-slate-100 text-slate-700'
-                              : 'bg-white/10 text-slate-300'
+                              ? 'bg-slate-100 border-slate-300 text-slate-800'
+                              : 'bg-white/10 border-white/15 text-slate-200'
                           }`}
                         >
                           {item.badge}
@@ -1130,7 +1229,13 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
                     </p>
 
                     {updatedTimeStr && (
-                      <div className="mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-500/15 border border-amber-400/30 text-[10px] font-semibold text-amber-300">
+                      <div
+                        className={`mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] font-bold ${
+                          isLightTheme
+                            ? 'bg-amber-100 border-amber-300 text-amber-950'
+                            : 'bg-amber-500/15 border-amber-400/30 text-amber-300'
+                        }`}
+                      >
                         <Clock size={10} />
                         <span>
                           เปลี่ยนลิงก์ล่าสุด: {updatedTimeStr} น.
@@ -1146,12 +1251,16 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
                   <div className="min-w-0">
                     <p
                       className={`text-xs sm:text-sm leading-relaxed ${
-                        isLightTheme ? 'text-slate-700' : 'text-slate-200'
+                        isLightTheme ? 'text-slate-800 font-medium' : 'text-slate-200'
                       }`}
                     >
                       {item.description}
                     </p>
-                    <p className="text-[10px] font-mono text-slate-500 truncate mt-1">
+                    <p
+                      className={`text-[10px] font-mono truncate mt-1 ${
+                        isLightTheme ? 'text-slate-500' : 'text-slate-400'
+                      }`}
+                    >
                       {item.url}
                     </p>
                   </div>
@@ -1161,13 +1270,17 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
                     <button
                       type="button"
                       onClick={(e) => handleCopySingleLink(item, e)}
-                      className="px-2.5 py-1.5 rounded-xl bg-sky-500/15 hover:bg-sky-500/30 border border-sky-400/30 text-[11px] font-bold text-sky-300 flex items-center gap-1 transition"
+                      className={`px-2.5 py-1.5 rounded-xl border text-[11px] font-bold flex items-center gap-1 transition ${
+                        isLightTheme
+                          ? 'bg-sky-100 hover:bg-sky-200 border-sky-300 text-sky-950 shadow-2xs'
+                          : 'bg-sky-500/15 hover:bg-sky-500/30 border-sky-400/30 text-sky-200'
+                      }`}
                       title="คัดลอกลิงก์พร้อมคำอธิบายเพื่อส่งต่อใน LINE"
                     >
                       {copiedLinkId === item.id ? (
                         <>
-                          <Check size={12} className="text-emerald-400" />
-                          <span className="text-emerald-300">ก็อปแล้ว!</span>
+                          <Check size={12} className={isLightTheme ? 'text-emerald-700' : 'text-emerald-400'} />
+                          <span className={isLightTheme ? 'text-emerald-900' : 'text-emerald-300'}>ก็อปแล้ว!</span>
                         </>
                       ) : (
                         <>
@@ -1181,7 +1294,11 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
                     <button
                       type="button"
                       onClick={(e) => handleOpenEditLink(item, e)}
-                      className="px-2.5 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/30 border border-amber-400/30 text-[11px] font-bold text-amber-300 flex items-center gap-1 transition"
+                      className={`px-2.5 py-1.5 rounded-xl border text-[11px] font-bold flex items-center gap-1 transition ${
+                        isLightTheme
+                          ? 'bg-amber-100 hover:bg-amber-200 border-amber-300 text-amber-950 shadow-2xs'
+                          : 'bg-amber-500/15 hover:bg-amber-500/30 border-amber-400/30 text-amber-200'
+                      }`}
                       title="เปลี่ยนลิงก์ URL ใหม่ หรือแก้ไขคำอธิบาย (พร้อมบันทึกเวลาเปลี่ยนลิงก์)"
                     >
                       <Pencil size={12} />
@@ -1193,7 +1310,11 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
                       <button
                         type="button"
                         onClick={(e) => handleBookmarkToPersonal(item, e)}
-                        className="px-2.5 py-1.5 rounded-xl bg-pink-500/15 hover:bg-pink-500/30 border border-pink-400/30 text-[11px] font-semibold text-pink-200 flex items-center gap-1 transition"
+                        className={`px-2.5 py-1.5 rounded-xl border text-[11px] font-bold flex items-center gap-1 transition ${
+                          isLightTheme
+                            ? 'bg-pink-100 hover:bg-pink-200 border-pink-300 text-pink-950 shadow-2xs'
+                            : 'bg-pink-500/15 hover:bg-pink-500/30 border-pink-400/30 text-pink-200'
+                        }`}
                         title="เก็บลิงก์นี้เข้าโฟลเดอร์ส่วนตัวของฉัน"
                       >
                         <BookmarkPlus size={12} />
@@ -1206,7 +1327,11 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
                       <button
                         type="button"
                         onClick={(e) => handleDeleteEmployeeLink(item, e)}
-                        className="p-1.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/30 border border-rose-400/30 text-rose-300 transition"
+                        className={`p-1.5 rounded-xl border transition ${
+                          isLightTheme
+                            ? 'bg-rose-100 hover:bg-rose-200 border-rose-300 text-rose-800'
+                            : 'bg-rose-500/15 hover:bg-rose-500/30 border-rose-400/30 text-rose-300'
+                        }`}
                         title="ลบลิงก์นี้"
                       >
                         <Trash2 size={13} />

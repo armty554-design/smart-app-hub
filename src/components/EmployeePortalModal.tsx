@@ -1545,32 +1545,40 @@ export const EmployeePortalModal: React.FC<EmployeePortalModalProps> = ({
                         </div>
 
                         {folderTopics.length > 1 && (
-                          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+                          <div className="flex flex-wrap items-center gap-1.5">
                             <button
                               type="button"
                               onClick={() => setSelectedTopicFilter('all')}
-                              className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold whitespace-nowrap transition ${
+                              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold whitespace-nowrap transition border ${
                                 selectedTopicFilter === 'all'
-                                  ? 'bg-sky-600 text-white'
-                                  : 'bg-white/8 hover:bg-white/15 text-slate-300'
+                                  ? 'bg-sky-600 border-sky-500 text-white'
+                                  : 'bg-white/10 hover:bg-white/20 border-white/15 text-slate-200'
                               }`}
                             >
                               ทุกหัวข้อ ({activeFolder.links.length})
                             </button>
-                            {folderTopics.map((topic) => (
-                              <button
-                                key={topic}
-                                type="button"
-                                onClick={() => setSelectedTopicFilter(topic)}
-                                className={`px-2.5 py-1 rounded-lg text-[11px] font-medium whitespace-nowrap transition ${
-                                  selectedTopicFilter === topic
-                                    ? 'bg-sky-600 text-white font-semibold'
-                                    : 'bg-white/8 hover:bg-white/15 text-slate-300'
-                                }`}
-                              >
-                                {topic}
-                              </button>
-                            ))}
+                            {folderTopics.map((topic) => {
+                              const count = activeFolder.links.filter(
+                                (item) => item.codeOrTopic === topic
+                              ).length;
+                              return (
+                                <button
+                                  key={topic}
+                                  type="button"
+                                  onClick={() => setSelectedTopicFilter(topic)}
+                                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold whitespace-nowrap transition border flex items-center gap-1 ${
+                                    selectedTopicFilter === topic
+                                      ? 'bg-sky-600 border-sky-500 text-white shadow'
+                                      : 'bg-slate-900 hover:bg-sky-500/25 border-sky-400/35 text-sky-200'
+                                  }`}
+                                >
+                                  <span>{topic}</span>
+                                  <span className="px-1.5 py-0.2 rounded-full bg-white/15 text-[10px]">
+                                    {count}
+                                  </span>
+                                </button>
+                              );
+                            })}
                           </div>
                         )}
                       </div>
@@ -1643,12 +1651,20 @@ export const EmployeePortalModal: React.FC<EmployeePortalModalProps> = ({
                                 <div className="min-w-0">
                                   <div className="flex flex-wrap items-center gap-1.5 mb-0.5">
                                     {item.codeOrTopic && (
-                                      <span className="px-2 py-0.5 rounded-md bg-sky-500/20 border border-sky-400/30 text-sky-300 text-[10px] font-bold">
+                                      <span className="px-2 py-0.5 rounded-md bg-sky-500/25 border border-sky-400/40 text-sky-200 text-[10px] font-extrabold">
                                         {item.codeOrTopic}
                                       </span>
                                     )}
+                                    {item.subTopic && item.subTopic !== item.codeOrTopic && (
+                                      <span
+                                        className="px-2 py-0.5 rounded-md bg-indigo-500/20 border border-indigo-400/30 text-indigo-200 text-[10px] font-semibold truncate max-w-[220px]"
+                                        title={item.subTopic}
+                                      >
+                                        {item.subTopic}
+                                      </span>
+                                    )}
                                     {item.badge && (
-                                      <span className="px-1.5 py-0.5 rounded bg-white/10 text-slate-300 text-[10px] font-medium">
+                                      <span className="px-1.5 py-0.5 rounded bg-white/10 text-slate-200 text-[10px] font-medium">
                                         {item.badge}
                                       </span>
                                     )}

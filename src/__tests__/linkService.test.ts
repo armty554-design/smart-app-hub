@@ -396,5 +396,21 @@ describe('App Hub Launcher - Link & Icon Studio Service', () => {
     });
     expect(linkShareMsg).toContain('https://docs.google.com/spreadsheets/d/updated-link-2026/edit');
     expect(linkShareMsg).toContain('เปลี่ยนลิงก์ล่าสุดเมื่อ');
+
+    // 4. ตรวจสอบความครบถ้วนของหัวข้อทั้งหมดในแผ่นงาน Link มาตรฐาน 69
+    const std69 = initialFolders.find((f) => f.sheetName === 'Link มาตรฐาน 69')!;
+    const std69Topics = Array.from(new Set(std69.links.map((l) => l.codeOrTopic)));
+    const expectedTopics = [
+      '1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '1.7', '1.8',
+      '2.1', '2.2', '2.3', '2.4', '2.5', '2.6', '2.7', '2.8',
+      '3.1', '3.2', '3.3', '3.4', '3.5', '3.6', '3.7', '3.8',
+      '4.1', '4.2', '4.3', '4.4', '4.5', '4.6', '4.7',
+      '5.1', '5.2',
+      'ยกเว้น', 'เลขไมล์', 'ค่าเฉลี่ยราคาน้ำมัน', 'new',
+    ];
+    for (const topic of expectedTopics) {
+      expect(std69Topics).toContain(topic);
+    }
+    expect(std69.links.filter((l) => l.codeOrTopic === '3.8').length).toBe(3);
   });
 });
