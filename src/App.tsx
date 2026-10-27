@@ -19,6 +19,7 @@ import {
   AppLink,
   AppSettings,
   Category,
+  EmployeeBranchFolder,
   EmployeePersonalFolder,
   EmployeeProfile,
   EmployeeSheetFolder,
@@ -48,17 +49,22 @@ import {
 } from './services/employeeService';
 import {
   buildFolderShareUrl,
+  createBranchFolder,
   createPersonalFolder,
+  deleteBranchFolder,
   deletePersonalFolder,
   EmployeeFolderLayoutPrefs,
   FolderDisplayStyle,
+  getBranchFoldersForBranch,
   getEmployeeFolderLayoutPrefs,
   getEmployeeFolders,
   getFolderNotesCountMap,
   getPersonalFoldersForEmployee,
+  moveBranchFolderOrder,
   movePersonalFolderOrder,
   saveEmployeeFolderLayoutPrefs,
   syncEmployeeWorkspaceFromCloud,
+  updateBranchFolder,
   updatePersonalFolder,
 } from './services/employeeLinksService';
 import { AppIconCard } from './components/AppIconCard';
@@ -171,6 +177,9 @@ export function App() {
   const [personalFolders, setPersonalFolders] = useState<EmployeePersonalFolder[]>(() =>
     currentEmployee ? getPersonalFoldersForEmployee(currentEmployee.code) : []
   );
+  const [branchFolders, setBranchFolders] = useState<EmployeeBranchFolder[]>(() =>
+    currentEmployee ? getBranchFoldersForBranch(currentEmployee.branch) : []
+  );
   const [notesCountMap, setNotesCountMap] = useState<Record<string, number>>(() =>
     getFolderNotesCountMap(currentEmployee?.code || 'public')
   );
@@ -188,6 +197,13 @@ export function App() {
   const [inlineFolderDesc, setInlineFolderDesc] = useState('');
   const [inlineFolderColor, setInlineFolderColor] = useState('#ec4899');
   const [inlineFolderStatusMsg, setInlineFolderStatusMsg] = useState('');
+
+  // ฟอร์มสร้าง/แก้ไขโฟลเดอร์ประจำสาขาแบบ Inline บนหน้าโฮมโดยตรง (แชร์เฉพาะสาขา ทุกคนในสาขาเพิ่ม/ลบ/แก้ไขได้)
+  const [isInlineBranchFormOpen, setIsInlineBranchFormOpen] = useState(false);
+  const [editingInlineBranchFolderId, setEditingInlineBranchFolderId] = useState<string | null>(null);
+  const [inlineBranchName, setInlineBranchName] = useState('');
+  const [inlineBranchDesc, setInlineBranchDesc] = useState('');
+  const [inlineBranchColor, setInlineBranchColor] = useState('#10b981');
 
   const showInlineFolderBanner = (msg: string) => {
     setInlineFolderStatusMsg(msg);
@@ -284,6 +300,94 @@ export function App() {
     setPersonalFolders(updated);
   };
 
+  // จัดการโฟลเดอร์ประจำสาขาแบบ Inline
+  const handleOpenInlineCreateBranchFolder = () => {
+    setEditingInlineBranchFolderId(null);
+    setInlineBranchName('');
+    setInlineBranchDesc('');
+    setInlineBranchColor('#10b981');
+    setIsInlineBranchFormOpen(true);
+  };
+
+  const handleOpenInlineEditBranchFolder = (
+    folder: EmployeeBranchFolder,
+    e?: React.MouseEvent
+  ) => {
+    e?.stopPropagation();
+    setEditingInlineBranchFolderId(folder.id);
+    setInlineBranchName(folder.name);
+    setInlineBranchDesc(folder.description);
+    setInlineBranchColor(folder.color || '#10b981');
+    setIsInlineBranchFormOpen(true);
+  };
+
+  const handleSaveInlineBranchFolder = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentEmployee || !inlineBranchName.trim()) return;
+    const cleanName = inlineBranchName.trim();
+    const actorLabel = `${currentEmployee.firstName} (${currentEmployee.code})`;
+
+    if (editingInlineBranchFolderId) {
+      const updated = await updateBranchFolder(
+        currentEmployee.branch,
+        editingInlineBranchFolderId,
+        {
+          name: cleanName,
+          description: inlineBranchDesc,
+          color: inlineBranchColor,
+          updatedBy: actorLabel,
+        }
+      );
+      setBranchFolders(updated);
+      showInlineFolderBanner(`แก้ไขโฟลเดอร์สาขา "${cleanName}" เรียบร้อยแล้ว!`);
+    } else {
+      const updated = await createBranchFolder(
+        currentEmployee.branch,
+        {
+          name: cleanName,
+          description: inlineBranchDesc,
+          color: inlineBranchColor,
+          updatedBy: actorLabel,
+        }
+      );
+      setBranchFolders(updated);
+      showInlineFolderBanner(
+        `สร้างโฟลเดอร์สาขา "${cleanName}" สำหรับสาขา ${currentEmployee.branch} เรียบร้อยแล้ว!`
+      );
+    }
+    setIsInlineBranchFormOpen(false);
+    setEditingInlineBranchFolderId(null);
+  };
+
+  const handleDeleteInlineBranchFolder = async (
+    folder: EmployeeBranchFolder,
+    e?: React.MouseEvent
+  ) => {
+    e?.stopPropagation();
+    if (!currentEmployee) return;
+    if (
+      !window.confirm(
+        `ต้องการลบโฟลเดอร์สาขา "${folder.name}" ใช่หรือไม่?\n(ทุกคนในสาขา ${currentEmployee.branch} จะไม่สามารถเข้าถึงโฟลเดอร์นี้ได้)`
+      )
+    ) {
+      return;
+    }
+    const updated = await deleteBranchFolder(currentEmployee.branch, folder.id);
+    setBranchFolders(updated);
+    showInlineFolderBanner(`ลบโฟลเดอร์สาขา "${folder.name}" เรียบร้อยแล้ว`);
+  };
+
+  const handleMoveInlineBranchFolder = async (
+    folderId: string,
+    direction: 'left' | 'right',
+    e?: React.MouseEvent
+  ) => {
+    e?.stopPropagation();
+    if (!currentEmployee) return;
+    const updated = await moveBranchFolderOrder(currentEmployee.branch, folderId, direction);
+    setBranchFolders(updated);
+  };
+
   // เปิดหน้าข้อมูลของ User แบบเปลี่ยนหน้าเต็มจอ (แทนป๊อปอัพ)
   const openUserPage = useCallback((initialTarget: string | null = '__user_profile__') => {
     setOpenedFolderCategory(null);
@@ -303,26 +407,37 @@ export function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
 
-  const refreshEmployeeWorkspaceState = useCallback(async (empCode?: string) => {
-    const code = empCode ?? currentEmployee?.code;
-    setEmployeeFolders(getEmployeeFolders());
-    setFolderLayoutPrefs(getEmployeeFolderLayoutPrefs(code));
-    if (code) {
-      setPersonalFolders(getPersonalFoldersForEmployee(code));
-      setNotesCountMap(getFolderNotesCountMap(code));
-      const synced = await syncEmployeeWorkspaceFromCloud(code);
+  const refreshEmployeeWorkspaceState = useCallback(
+    async (empCode?: string, branchName?: string) => {
+      const code = empCode ?? currentEmployee?.code;
+      const branch = branchName ?? currentEmployee?.branch;
       setEmployeeFolders(getEmployeeFolders());
-      setPersonalFolders(synced.personalFolders);
-      setNotesCountMap(getFolderNotesCountMap(code));
-    } else {
-      setPersonalFolders([]);
-      setNotesCountMap(getFolderNotesCountMap('public'));
-    }
-  }, [currentEmployee?.code]);
+      setFolderLayoutPrefs(getEmployeeFolderLayoutPrefs(code));
+      if (code) {
+        setPersonalFolders(getPersonalFoldersForEmployee(code));
+        setNotesCountMap(getFolderNotesCountMap(code));
+        if (branch) {
+          setBranchFolders(getBranchFoldersForBranch(branch));
+        }
+        const synced = await syncEmployeeWorkspaceFromCloud(code, branch);
+        setEmployeeFolders(getEmployeeFolders());
+        setPersonalFolders(synced.personalFolders);
+        if (synced.branchFolders && synced.branchFolders.length > 0) {
+          setBranchFolders(synced.branchFolders);
+        }
+        setNotesCountMap(getFolderNotesCountMap(code));
+      } else {
+        setPersonalFolders([]);
+        setBranchFolders([]);
+        setNotesCountMap(getFolderNotesCountMap('public'));
+      }
+    },
+    [currentEmployee?.code, currentEmployee?.branch]
+  );
 
   useEffect(() => {
-    refreshEmployeeWorkspaceState(currentEmployee?.code);
-  }, [currentEmployee?.code, refreshEmployeeWorkspaceState]);
+    refreshEmployeeWorkspaceState(currentEmployee?.code, currentEmployee?.branch);
+  }, [currentEmployee?.code, currentEmployee?.branch, refreshEmployeeWorkspaceState]);
 
   // ระบบเปลี่ยนหน้าเข้าโฟลเดอร์เต็มจอ + เปลี่ยนลิงก์ URL เฉพาะ (?folder=... หรือ ?cat=...)
   const navigateToFolderPage = useCallback(
@@ -499,6 +614,9 @@ export function App() {
   const handleEmployeeLogin = (employee: EmployeeProfile) => {
     setCurrentEmployee(employee);
     saveLoggedInEmployee(employee);
+    setPersonalFolders(getPersonalFoldersForEmployee(employee.code));
+    setBranchFolders(getBranchFoldersForBranch(employee.branch));
+    refreshEmployeeWorkspaceState(employee.code, employee.branch);
     if (pendingSharedFolderId) {
       const targetId = pendingSharedFolderId;
       setPendingSharedFolderId(null);
@@ -515,6 +633,8 @@ export function App() {
   const handleEmployeeLogout = () => {
     setCurrentEmployee(null);
     saveLoggedInEmployee(null);
+    setPersonalFolders([]);
+    setBranchFolders([]);
     if (activePageFolder?.folderId) {
       setActivePageFolder(null);
       window.history.pushState({}, '', window.location.pathname);
@@ -755,11 +875,17 @@ export function App() {
   const activePersonalFolderObj = activePageFolder?.folderId
     ? personalFolders.find((f) => f.id === activePageFolder.folderId) || null
     : null;
+  const activeBranchFolderObj = activePageFolder?.folderId
+    ? branchFolders.find((f) => f.id === activePageFolder.folderId) || null
+    : null;
   const activeCategoryPageObj = activePageFolder?.categoryId
     ? categories.find((c) => c.id === activePageFolder.categoryId) || null
     : null;
   const isFolderPageOpen = Boolean(
-    activeSheetFolderObj || activePersonalFolderObj || activeCategoryPageObj
+    activeSheetFolderObj ||
+      activePersonalFolderObj ||
+      activeBranchFolderObj ||
+      activeCategoryPageObj
   );
   const pendingFolderBannerText = pendingSharedFolderId
     ? employeeFolders.find((f) => f.id === pendingSharedFolderId)?.sheetName ||
@@ -1428,10 +1554,13 @@ export function App() {
                     ? 'employee-sheet'
                     : activePersonalFolderObj
                     ? 'employee-personal'
+                    : activeBranchFolderObj
+                    ? 'employee-branch'
                     : 'category'
                 }
                 sheetFolder={activeSheetFolderObj}
                 personalFolder={activePersonalFolderObj}
+                branchFolder={activeBranchFolderObj}
                 category={activeCategoryPageObj}
                 categoryLinks={
                   activeCategoryPageObj
@@ -1442,6 +1571,7 @@ export function App() {
                   (f) => f.id !== 'folder-sheet5' && f.links.length > 0
                 )}
                 allPersonalFolders={personalFolders}
+                allBranchFolders={branchFolders}
                 allCategories={categories}
                 currentEmployee={currentEmployee}
                 isLightTheme={isLightTheme}
@@ -1449,7 +1579,9 @@ export function App() {
                 iconShape={settings.icon_shape}
                 onBackToHome={() => navigateToFolderPage(null)}
                 onSwitchFolder={(target) => navigateToFolderPage(target)}
-                onRefreshWorkspace={() => refreshEmployeeWorkspaceState(currentEmployee?.code)}
+                onRefreshWorkspace={() =>
+                  refreshEmployeeWorkspaceState(currentEmployee?.code, currentEmployee?.branch)
+                }
                 onEditCategoryLink={(link) => openEditLinkModal(link)}
                 onDeleteCategoryLink={handleDeleteLink}
                 onAddCategoryLink={(catId) => openAddLinkModal(catId, false)}
@@ -1810,6 +1942,37 @@ export function App() {
                   </button>
                 ))}
 
+                {/* โฟลเดอร์ประจำสาขาบนแถบบุ๊กมาร์ก */}
+                {branchFolders.map((bf) => (
+                  <button
+                    key={`bm-branch-${bf.id}`}
+                    type="button"
+                    onClick={() => navigateToFolderPage({ folderId: bf.id })}
+                    className={`px-2.5 py-1 rounded-lg border text-xs font-bold flex items-center gap-1.5 transition hover:scale-[1.02] ${
+                      isLightTheme
+                        ? 'bg-white hover:bg-emerald-50 border-emerald-200 text-slate-800 shadow-2xs'
+                        : 'bg-slate-950 hover:bg-emerald-950/50 border-emerald-400/35 text-white'
+                    }`}
+                    title={`โฟลเดอร์สาขา ${currentEmployee?.branch || ''} (แชร์ทุกคนในสาขา)`}
+                  >
+                    <Building2
+                      size={13}
+                      style={{ color: bf.color || '#10b981' }}
+                      className="shrink-0"
+                    />
+                    <span className="truncate max-w-[140px]">{bf.name}</span>
+                    <span
+                      className={`px-1.5 py-0.2 rounded text-[10px] font-extrabold ${
+                        isLightTheme
+                          ? 'bg-emerald-100 text-emerald-900'
+                          : 'bg-emerald-500/25 text-emerald-200'
+                      }`}
+                    >
+                      {bf.links.length}
+                    </span>
+                  </button>
+                ))}
+
                 {/* โฟลเดอร์แผ่นงานที่ปักหมุดไว้บนแถบบุ๊กมาร์ก */}
                 {employeeFolders
                   .filter(
@@ -1852,7 +2015,21 @@ export function App() {
                   title="สร้างโฟลเดอร์ส่วนตัวใหม่เพิ่มบนแถบโฟลเดอร์"
                 >
                   <Plus size={12} />
-                  <span>เพิ่มโฟลเดอร์</span>
+                  <span>+ ส่วนตัว</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleOpenInlineCreateBranchFolder}
+                  className={`px-2.5 py-1 rounded-lg border border-dashed text-[11px] font-bold flex items-center gap-1 transition ${
+                    isLightTheme
+                      ? 'bg-emerald-50/80 hover:bg-emerald-100 border-emerald-300 text-emerald-800'
+                      : 'bg-emerald-500/15 hover:bg-emerald-500/25 border-emerald-400/40 text-emerald-200'
+                  }`}
+                  title={`สร้างโฟลเดอร์สาขาใหม่สำหรับสาขา ${currentEmployee?.branch || ''}`}
+                >
+                  <Building2 size={12} />
+                  <span>+ โฟลเดอร์สาขา</span>
                 </button>
               </div>
 
@@ -2428,7 +2605,448 @@ export function App() {
               )}
             </div>
 
-            {/* ส่วนที่ 2: โฟลเดอร์ลิงก์เฉพาะพนักงาน (แยกตามแผ่นงาน - ไม่แสดง "ชีต5" ที่ไม่มีลิงก์) */}
+            {/* ส่วนที่ 2: โฟลเดอร์ประจำสาขา (แชร์เฉพาะสาขา ทุกคนในสาขาเพิ่ม/ลบ/แก้ไขได้) */}
+            <div
+              className={`p-4 rounded-2xl border space-y-3 ${
+                isLightTheme
+                  ? 'bg-gradient-to-r from-emerald-50/90 via-white to-teal-50/90 border-emerald-200'
+                  : 'bg-gradient-to-r from-emerald-950/35 via-slate-900/90 to-teal-950/40 border-emerald-400/30'
+              }`}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Building2 size={17} className="text-emerald-500" />
+                    <h3 className="text-sm sm:text-base font-bold">
+                      โฟลเดอร์ประจำสาขา {currentEmployee.branch}
+                    </h3>
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                        isLightTheme
+                          ? 'bg-emerald-100 border-emerald-300 text-emerald-900'
+                          : 'bg-emerald-500/20 border-emerald-400/30 text-emerald-200'
+                      }`}
+                    >
+                      แชร์เฉพาะสาขา {currentEmployee.branch} • ทุกคนในสาขาเพิ่ม/ลบ/แก้ไขได้
+                    </span>
+                  </div>
+                  <p
+                    className={`text-xs mt-0.5 ${
+                      isLightTheme ? 'text-slate-600' : 'text-slate-300'
+                    }`}
+                  >
+                    โฟลเดอร์สำหรับพนักงานประจำสาขา {currentEmployee.branch} ร่วมกันเพิ่มลิงก์งาน บันทึกโน้ต และแชร์งานร่วมกัน
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleOpenInlineCreateBranchFolder}
+                  className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-xs font-bold text-white flex items-center gap-1.5 shadow transition"
+                >
+                  <FolderPlus size={14} />
+                  <span>+ สร้างโฟลเดอร์สาขาใหม่</span>
+                </button>
+              </div>
+
+              {/* ฟอร์มสร้างหรือแก้ไขโฟลเดอร์ประจำสาขาแบบ Inline */}
+              {isInlineBranchFormOpen && (
+                <form
+                  onSubmit={handleSaveInlineBranchFolder}
+                  className={`p-3.5 sm:p-4 rounded-2xl border-2 space-y-3 animate-fade-in ${
+                    isLightTheme
+                      ? 'bg-white border-emerald-300 shadow-md'
+                      : 'bg-slate-950 border-emerald-500/50 shadow-xl'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span
+                      className={`text-xs sm:text-sm font-bold flex items-center gap-1.5 ${
+                        isLightTheme ? 'text-emerald-800' : 'text-emerald-300'
+                      }`}
+                    >
+                      <Building2 size={15} />
+                      <span>
+                        {editingInlineBranchFolderId
+                          ? `แก้ไขชื่อ / สีโฟลเดอร์สาขา (${currentEmployee.branch})`
+                          : `สร้างโฟลเดอร์ใหม่สำหรับสาขา ${currentEmployee.branch}`}
+                      </span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsInlineBranchFormOpen(false);
+                        setEditingInlineBranchFolderId(null);
+                      }}
+                      className={`p-1 rounded-lg ${
+                        isLightTheme
+                          ? 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                          : 'bg-white/10 hover:bg-white/20 text-slate-300'
+                      }`}
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label
+                        className={`block text-[11px] font-bold mb-1 ${
+                          isLightTheme ? 'text-slate-700' : 'text-slate-300'
+                        }`}
+                      >
+                        ชื่อโฟลเดอร์สาขา *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={inlineBranchName}
+                        onChange={(e) => setInlineBranchName(e.target.value)}
+                        placeholder={`เช่น งานประจำวันสาขา${currentEmployee.branch}, รายงานส่งตรงเวลา...`}
+                        className={`w-full px-3 py-2 rounded-xl border text-xs sm:text-sm focus:outline-none ${
+                          isLightTheme
+                            ? 'bg-slate-50 border-slate-300 focus:border-emerald-500 text-slate-900'
+                            : 'bg-slate-900 border-white/15 focus:border-emerald-400 text-white'
+                        }`}
+                      />
+                    </div>
+                    <div>
+                      <label
+                        className={`block text-[11px] font-bold mb-1 ${
+                          isLightTheme ? 'text-slate-700' : 'text-slate-300'
+                        }`}
+                      >
+                        คำอธิบายโฟลเดอร์
+                      </label>
+                      <input
+                        type="text"
+                        value={inlineBranchDesc}
+                        onChange={(e) => setInlineBranchDesc(e.target.value)}
+                        placeholder="เช่น รวบรวมลิงก์ที่เพื่อนร่วมสาขาต้องใช้งานร่วมกัน"
+                        className={`w-full px-3 py-2 rounded-xl border text-xs sm:text-sm focus:outline-none ${
+                          isLightTheme
+                            ? 'bg-slate-50 border-slate-300 focus:border-emerald-500 text-slate-900'
+                            : 'bg-slate-900 border-white/15 focus:border-emerald-400 text-white'
+                        }`}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span
+                        className={`text-xs font-semibold ${
+                          isLightTheme ? 'text-slate-600' : 'text-slate-400'
+                        }`}
+                      >
+                        สีโฟลเดอร์:
+                      </span>
+                      {HOME_PERSONAL_FOLDER_COLORS.map((colorHex) => (
+                        <button
+                          key={colorHex}
+                          type="button"
+                          onClick={() => setInlineBranchColor(colorHex)}
+                          className={`w-6 h-6 rounded-full border-2 transition flex items-center justify-center ${
+                            inlineBranchColor === colorHex
+                              ? 'border-slate-900 dark:border-white scale-110 shadow'
+                              : 'border-transparent opacity-75 hover:opacity-100'
+                          }`}
+                          style={{ backgroundColor: colorHex }}
+                        >
+                          {inlineBranchColor === colorHex && (
+                            <Check size={12} className="text-white" />
+                          )}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsInlineBranchFormOpen(false);
+                          setEditingInlineBranchFolderId(null);
+                        }}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-semibold ${
+                          isLightTheme
+                            ? 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                            : 'bg-white/10 hover:bg-white/20 text-slate-300'
+                        }`}
+                      >
+                        ยกเลิก
+                      </button>
+                      <button
+                        type="submit"
+                        className="px-4 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-xs font-bold text-white shadow"
+                      >
+                        {editingInlineBranchFolderId ? 'บันทึกการแก้ไข' : 'สร้างโฟลเดอร์สาขา'}
+                      </button>
+                    </div>
+                  </div>
+                </form>
+              )}
+
+              {/* แสดงโฟลเดอร์ประจำสาขาตามรูปแบบที่เลือก (Bookmark Bar / Desktop Icons / Cards) */}
+              {folderLayoutPrefs.displayStyle === 'bookmark-bar' ? (
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  {branchFolders.map((bFolder, idx) => (
+                    <div
+                      key={bFolder.id}
+                      onClick={() => navigateToFolderPage({ folderId: bFolder.id })}
+                      className={`group inline-flex items-center gap-2 px-3 py-2 rounded-xl border cursor-pointer transition hover:-translate-y-0.5 ${
+                        isLightTheme
+                          ? 'bg-white hover:bg-emerald-50 border-emerald-200 shadow-2xs'
+                          : 'bg-slate-950/90 hover:bg-slate-900 border-emerald-400/35'
+                      }`}
+                    >
+                      <Building2
+                        size={16}
+                        style={{ color: bFolder.color || '#10b981' }}
+                        className="shrink-0"
+                      />
+                      <span className="text-xs font-bold">{bFolder.name}</span>
+                      <span
+                        className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+                          isLightTheme
+                            ? 'bg-emerald-100 text-emerald-900'
+                            : 'bg-emerald-500/25 text-emerald-200'
+                        }`}
+                      >
+                        {bFolder.links.length}
+                      </span>
+                      <div className="flex items-center gap-0.5 ml-1">
+                        {branchFolders.length > 1 && (
+                          <>
+                            <button
+                              type="button"
+                              disabled={idx === 0}
+                              onClick={(e) =>
+                                handleMoveInlineBranchFolder(bFolder.id, 'left', e)
+                              }
+                              className="p-1 rounded hover:bg-black/10 disabled:opacity-30"
+                              title="เลื่อนซ้าย"
+                            >
+                              <ChevronLeft size={11} />
+                            </button>
+                            <button
+                              type="button"
+                              disabled={idx === branchFolders.length - 1}
+                              onClick={(e) =>
+                                handleMoveInlineBranchFolder(bFolder.id, 'right', e)
+                              }
+                              className="p-1 rounded hover:bg-black/10 disabled:opacity-30"
+                              title="เลื่อนขวา"
+                            >
+                              <ChevronRight size={11} />
+                            </button>
+                          </>
+                        )}
+                        <button
+                          type="button"
+                          onClick={(e) => handleOpenInlineEditBranchFolder(bFolder, e)}
+                          className="p-1 rounded hover:bg-black/10"
+                          title="แก้ไขโฟลเดอร์สาขา"
+                        >
+                          <Pencil size={11} />
+                        </button>
+                        {branchFolders.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={(e) => handleDeleteInlineBranchFolder(bFolder, e)}
+                            className="p-1 rounded hover:bg-rose-500/20 text-rose-500"
+                            title="ลบโฟลเดอร์สาขา"
+                          >
+                            <Trash2 size={11} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : folderLayoutPrefs.displayStyle === 'desktop-icons' ? (
+                <div
+                  className={`grid gap-3 ${
+                    folderLayoutPrefs.gridCols === 6
+                      ? 'grid-cols-2 sm:grid-cols-4 lg:grid-cols-6'
+                      : folderLayoutPrefs.gridCols === 4
+                      ? 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-4'
+                      : folderLayoutPrefs.gridCols === 2
+                      ? 'grid-cols-1 sm:grid-cols-2'
+                      : 'grid-cols-2 sm:grid-cols-3'
+                  }`}
+                >
+                  {branchFolders.map((bFolder) => (
+                    <div
+                      key={bFolder.id}
+                      onClick={() => navigateToFolderPage({ folderId: bFolder.id })}
+                      className={`group relative p-3 rounded-2xl border cursor-pointer transition hover:-translate-y-0.5 flex flex-col items-center text-center gap-1.5 ${
+                        isLightTheme
+                          ? 'bg-white hover:bg-emerald-50/60 border-emerald-200 shadow-2xs'
+                          : 'bg-slate-950/85 hover:bg-slate-900 border-emerald-400/30'
+                      }`}
+                    >
+                      <div className="absolute top-2 right-2 flex items-center gap-0.5 opacity-80 group-hover:opacity-100">
+                        <button
+                          type="button"
+                          onClick={(e) => handleOpenInlineEditBranchFolder(bFolder, e)}
+                          className="p-1 rounded hover:bg-black/10"
+                          title="แก้ไขโฟลเดอร์สาขา"
+                        >
+                          <Pencil size={11} />
+                        </button>
+                        {branchFolders.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={(e) => handleDeleteInlineBranchFolder(bFolder, e)}
+                            className="p-1 rounded hover:bg-rose-500/20 text-rose-500"
+                            title="ลบโฟลเดอร์สาขา"
+                          >
+                            <Trash2 size={11} />
+                          </button>
+                        )}
+                      </div>
+
+                      <div
+                        className="w-12 h-12 rounded-2xl flex items-center justify-center text-white shadow-md transition group-hover:scale-105"
+                        style={{
+                          background: `linear-gradient(135deg, ${
+                            bFolder.color || '#10b981'
+                          } 0%, #064e3b 100%)`,
+                        }}
+                      >
+                        <Building2 size={24} />
+                      </div>
+
+                      <p
+                        className={`text-xs font-bold truncate max-w-full ${
+                          isLightTheme ? 'text-slate-800' : 'text-white'
+                        }`}
+                      >
+                        {bFolder.name}
+                      </p>
+
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                          isLightTheme
+                            ? 'bg-emerald-100 text-emerald-900'
+                            : 'bg-emerald-500/20 text-emerald-200'
+                        }`}
+                      >
+                        {bFolder.links.length} ลิงก์
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div
+                  className={`grid gap-3 ${
+                    folderLayoutPrefs.gridCols === 6
+                      ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'
+                      : folderLayoutPrefs.gridCols === 4
+                      ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-2'
+                      : folderLayoutPrefs.gridCols === 2
+                      ? 'grid-cols-1'
+                      : 'grid-cols-1 sm:grid-cols-2'
+                  }`}
+                >
+                  {branchFolders.map((bFolder) => {
+                    const noteCount = notesCountMap[bFolder.id] || 0;
+                    return (
+                      <div
+                        key={bFolder.id}
+                        onClick={() => navigateToFolderPage({ folderId: bFolder.id })}
+                        className={`group relative p-3.5 sm:p-4 rounded-2xl border cursor-pointer transition hover:-translate-y-0.5 shadow-sm flex flex-col justify-between gap-3 ${
+                          isLightTheme
+                            ? 'bg-white hover:bg-emerald-50/40 border-emerald-200 hover:border-emerald-400'
+                            : 'bg-slate-950/90 hover:bg-slate-900 border-emerald-400/30 hover:border-emerald-400/60'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div
+                              className="w-10 h-10 rounded-2xl flex items-center justify-center text-white shadow-md shrink-0"
+                              style={{
+                                background: `linear-gradient(135deg, ${
+                                  bFolder.color || '#10b981'
+                                } 0%, #064e3b 100%)`,
+                              }}
+                            >
+                              <Building2 size={20} />
+                            </div>
+                            <div className="min-w-0">
+                              <h4
+                                className={`text-xs sm:text-sm font-bold truncate ${
+                                  isLightTheme ? 'text-slate-900' : 'text-white'
+                                }`}
+                              >
+                                {bFolder.name}
+                              </h4>
+                              <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                                <span
+                                  className={`text-[10px] font-extrabold ${
+                                    isLightTheme ? 'text-emerald-700' : 'text-emerald-300'
+                                  }`}
+                                >
+                                  {bFolder.links.length} ลิงก์
+                                </span>
+                                <span className="opacity-40">•</span>
+                                <span
+                                  className={`text-[10px] font-semibold flex items-center gap-1 ${
+                                    isLightTheme ? 'text-amber-700' : 'text-amber-300'
+                                  }`}
+                                >
+                                  <StickyNote size={10} />
+                                  {noteCount} โน้ต
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              type="button"
+                              onClick={(e) => handleOpenInlineEditBranchFolder(bFolder, e)}
+                              className={`p-1.5 rounded-lg border transition ${
+                                isLightTheme
+                                  ? 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-700'
+                                  : 'bg-white/10 hover:bg-white/20 border-white/10 text-slate-200'
+                              }`}
+                              title="แก้ไขโฟลเดอร์สาขา"
+                            >
+                              <Pencil size={12} />
+                            </button>
+                            {branchFolders.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={(e) => handleDeleteInlineBranchFolder(bFolder, e)}
+                                className={`p-1.5 rounded-lg border transition ${
+                                  isLightTheme
+                                    ? 'bg-rose-50 hover:bg-rose-100 border-rose-200 text-rose-600'
+                                    : 'bg-white/10 hover:bg-rose-500/30 border-white/10 text-rose-300'
+                                }`}
+                                title="ลบโฟลเดอร์สาขา"
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        <p
+                          className={`text-[11px] line-clamp-2 leading-relaxed ${
+                            isLightTheme ? 'text-slate-600' : 'text-slate-300'
+                          }`}
+                        >
+                          {bFolder.description}
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* ส่วนที่ 3: โฟลเดอร์ลิงก์เฉพาะพนักงาน (แยกตามแผ่นงาน - ไม่แสดง "ชีต5" ที่ไม่มีลิงก์) */}
             <div>
               <div className="flex flex-wrap items-center justify-between gap-2 mb-3.5">
                 <div>

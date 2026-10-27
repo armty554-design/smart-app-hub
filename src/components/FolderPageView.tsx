@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   AppLink,
   Category,
+  EmployeeBranchFolder,
   EmployeeLinkItem,
   EmployeePersonalFolder,
   EmployeeProfile,
@@ -9,16 +10,22 @@ import {
   IconShape,
 } from '../types/app';
 import {
+  addLinkToBranchFolder,
   addLinkToEmployeeSheetFolder,
   addLinkToPersonalFolder,
   buildLinkItemShareText,
+  createBranchFolder,
   createPersonalFolder,
+  deleteBranchFolder,
   deleteLinkFromEmployeeSheetFolder,
   deletePersonalFolder,
   formatLinkUpdatedTime,
   getEmployeeLinksSheetUrl,
+  removeLinkFromBranchFolder,
   removeLinkFromPersonalFolder,
+  updateBranchFolder,
   updateEmployeeSheetFolderLink,
+  updateLinkInBranchFolder,
   updateLinkInPersonalFolder,
   updatePersonalFolder,
 } from '../services/employeeLinksService';
@@ -39,6 +46,7 @@ import {
   Folder,
   FolderPlus,
   Star,
+  Building2,
   Lock,
   X,
   CheckCircle2,
@@ -48,21 +56,23 @@ import {
 const PERSONAL_FOLDER_COLORS = [
   '#ec4899',
   '#0ea5e9',
-  '#6366f1',
   '#10b981',
+  '#6366f1',
   '#f59e0b',
   '#8b5cf6',
   '#f43f5e',
 ];
 
 interface FolderPageViewProps {
-  mode: 'employee-sheet' | 'employee-personal' | 'category';
+  mode: 'employee-sheet' | 'employee-personal' | 'employee-branch' | 'category';
   sheetFolder?: EmployeeSheetFolder | null;
   personalFolder?: EmployeePersonalFolder | null;
+  branchFolder?: EmployeeBranchFolder | null;
   category?: Category | null;
   categoryLinks?: AppLink[];
   allSheetFolders: EmployeeSheetFolder[];
   allPersonalFolders: EmployeePersonalFolder[];
+  allBranchFolders?: EmployeeBranchFolder[];
   allCategories: Category[];
   currentEmployee: EmployeeProfile | null;
   iconShape: IconShape;
@@ -80,11 +90,13 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
   mode,
   sheetFolder,
   personalFolder,
+  branchFolder,
   category,
   categoryLinks = [],
   allSheetFolders,
   allPersonalFolders,
-  allCategories,
+  allBranchFolders = [],
+  allCategories = [],
   currentEmployee,
   iconShape,
   isLightTheme,
@@ -109,20 +121,25 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
   const [topicInput, setTopicInput] = useState('');
   const [descInput, setDescInput] = useState('');
 
-  // ฟอร์มแก้ไขชื่อ/สีโฟลเดอร์ส่วนตัว หรือสร้างโฟลเดอร์ส่วนตัวใหม่ในหน้านี้ทันที
+  // ฟอร์มแก้ไขชื่อ/สีโฟลเดอร์ส่วนตัว หรือสร้างโฟลเดอร์ส่วนตัว/สาขาใหม่ในหน้านี้ทันที
   const [isEditingFolderMeta, setIsEditingFolderMeta] = useState(false);
-  const [ isCreatingPersonalFolder, setIsCreatingPersonalFolder ] = useState(false);
+  const [isCreatingPersonalFolder, setIsCreatingPersonalFolder] = useState(false);
+  const [isCreatingBranchFolder, setIsCreatingBranchFolder] = useState(false);
   const [folderNameEdit, setFolderNameEdit] = useState('');
   const [folderDescEdit, setFolderDescEdit] = useState('');
   const [folderColorEdit, setFolderColorEdit] = useState('#ec4899');
 
-  // สิทธิ์การแก้ไข: พนักงานทั่วไปแก้ไขได้เฉพาะใน "โฟลเดอร์ส่วนตัว" เท่านั้น ส่วนกลางต้องเปิดโหมดแอดมิน (isEditMode)
+  // สิทธิ์การแก้ไข: พนักงานทั่วไปแก้ไขได้เฉพาะใน "โฟลเดอร์ส่วนตัว" และ "โฟลเดอร์สาขาตัวเอง" ส่วนกลางต้องเปิดโหมดแอดมิน (isEditMode)
   const canManageCurrentFolder =
-    mode === 'employee-personal' ? Boolean(currentEmployee) : isEditMode;
+    mode === 'employee-personal' || mode === 'employee-branch'
+      ? Boolean(currentEmployee)
+      : isEditMode;
 
   const activeFolderId =
     mode === 'employee-personal'
       ? personalFolder?.id || ''
+      : mode === 'employee-branch'
+      ? branchFolder?.id || ''
       : mode === 'employee-sheet'
       ? sheetFolder?.id || ''
       : category?.id || '';
@@ -130,6 +147,8 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
   const activeFolderName =
     mode === 'employee-personal'
       ? personalFolder?.name || 'โฟลเดอร์ส่วนตัว'
+      : mode === 'employee-branch'
+      ? branchFolder?.name || `โฟลเดอร์สาขา${currentEmployee?.branch || ''}`
       : mode === 'employee-sheet'
       ? sheetFolder?.sheetName || 'โฟลเดอร์แผ่นงาน'
       : category?.name || 'โฟลเดอร์หมวดหมู่';
@@ -137,6 +156,8 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
   const activeFolderDesc =
     mode === 'employee-personal'
       ? personalFolder?.description || ''
+      : mode === 'employee-branch'
+      ? branchFolder?.description || `โฟลเดอร์สำหรับพนักงานประจำสาขา${currentEmployee?.branch || ''} ทุกคนในสาขาเพิ่ม/ลบ/แก้ไขได้`
       : mode === 'employee-sheet'
       ? sheetFolder?.description || ''
       : 'รวบรวมเว็บแอปพลิเคชันและลิงก์ระบบงานในหมวดหมู่นี้';
@@ -144,6 +165,8 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
   const activeFolderColor =
     mode === 'employee-personal'
       ? personalFolder?.color || '#ec4899'
+      : mode === 'employee-branch'
+      ? branchFolder?.color || '#10b981'
       : mode === 'employee-sheet'
       ? sheetFolder?.color || '#0ea5e9'
       : category?.color || '#6366f1';
@@ -155,6 +178,7 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
     setEditingLinkId(null);
     setIsEditingFolderMeta(false);
     setIsCreatingPersonalFolder(false);
+    setIsCreatingBranchFolder(false);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, [activeFolderId]);
 
@@ -168,6 +192,8 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
   const employeeItems: EmployeeLinkItem[] =
     mode === 'employee-personal'
       ? personalFolder?.links || []
+      : mode === 'employee-branch'
+      ? branchFolder?.links || []
       : mode === 'employee-sheet'
       ? sheetFolder?.links || []
       : [];
@@ -236,7 +262,13 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
     setEditingLinkId(null);
     setTitleInput('');
     setUrlInput('');
-    setTopicInput(mode === 'employee-personal' ? 'งานประจำวัน' : 'ลิงก์อัปเดตใหม่');
+    setTopicInput(
+      mode === 'employee-personal'
+        ? 'งานประจำวัน'
+        : mode === 'employee-branch'
+        ? `งานสาขา${currentEmployee?.branch || ''}`
+        : 'ลิงก์อัปเดตใหม่'
+    );
     setDescInput('');
     setIsLinkFormOpen(true);
   };
@@ -286,6 +318,31 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
         });
         showTempBanner(`เพิ่มลิงก์ "${titleInput.trim()}" ลงในโฟลเดอร์ส่วนตัวแล้ว!`);
       }
+    } else if (mode === 'employee-branch' && branchFolder && currentEmployee) {
+      if (editingLinkId) {
+        await updateLinkInBranchFolder(
+          currentEmployee.branch,
+          branchFolder.id,
+          editingLinkId,
+          {
+            title: titleInput,
+            url: urlInput,
+            codeOrTopic: topicInput,
+            description: descInput,
+            updatedBy: actorLabel,
+          }
+        );
+        showTempBanner(`เปลี่ยนลิงก์ "${titleInput.trim()}" ในโฟลเดอร์สาขาเรียบร้อยแล้ว!`);
+      } else {
+        await addLinkToBranchFolder(currentEmployee.branch, branchFolder.id, {
+          title: titleInput,
+          url: urlInput,
+          codeOrTopic: topicInput,
+          description: descInput,
+          updatedBy: actorLabel,
+        });
+        showTempBanner(`เพิ่มลิงก์ "${titleInput.trim()}" ลงในโฟลเดอร์สาขา "${branchFolder.name}" แล้ว!`);
+      }
     } else if (mode === 'employee-sheet' && sheetFolder && isEditMode) {
       if (editingLinkId) {
         await updateEmployeeSheetFolderLink(sheetFolder.id, editingLinkId, {
@@ -322,6 +379,8 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
 
     if (mode === 'employee-personal' && personalFolder && currentEmployee) {
       await removeLinkFromPersonalFolder(currentEmployee.code, personalFolder.id, item.id);
+    } else if (mode === 'employee-branch' && branchFolder && currentEmployee) {
+      await removeLinkFromBranchFolder(currentEmployee.branch, branchFolder.id, item.id);
     } else if (mode === 'employee-sheet' && sheetFolder && isEditMode) {
       await deleteLinkFromEmployeeSheetFolder(sheetFolder.id, item.id);
     }
@@ -350,9 +409,30 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
     onRefreshWorkspace();
   };
 
+  const handleBookmarkToBranch = async (item: EmployeeLinkItem, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    if (!currentEmployee || allBranchFolders.length === 0) return;
+    const target = allBranchFolders[0];
+    const actorLabel = `${currentEmployee.firstName} (${currentEmployee.code})`;
+
+    await addLinkToBranchFolder(currentEmployee.branch, target.id, {
+      title: item.title,
+      url: item.url,
+      codeOrTopic: item.codeOrTopic || `แชร์ในสาขา${currentEmployee.branch}`,
+      description: item.description,
+      badge: item.badge,
+      iconName: item.iconName,
+      bgStyle: item.bgStyle,
+      updatedBy: actorLabel,
+    });
+    showTempBanner(`🏢 เก็บลิงก์ "${item.title}" เข้าโฟลเดอร์สาขา "${target.name}" แล้ว! (ทุกคนในสาขาจะเห็นทันที)`);
+    onRefreshWorkspace();
+  };
+
   const handleSaveFolderMeta = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentEmployee || !folderNameEdit.trim()) return;
+    const actorLabel = `${currentEmployee.firstName} (${currentEmployee.code})`;
 
     if (isCreatingPersonalFolder) {
       const updated = await createPersonalFolder(currentEmployee.code, {
@@ -368,6 +448,37 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
       if (newest) {
         onSwitchFolder({ folderId: newest.id });
       }
+      return;
+    }
+
+    if (isCreatingBranchFolder) {
+      const updated = await createBranchFolder(currentEmployee.branch, {
+        name: folderNameEdit,
+        description: folderDescEdit,
+        color: folderColorEdit,
+        updatedBy: actorLabel,
+      });
+      setIsCreatingBranchFolder(false);
+      setIsEditingFolderMeta(false);
+      const newest = updated[updated.length - 1];
+      showTempBanner(`สร้างโฟลเดอร์สาขา "${folderNameEdit.trim()}" สำหรับสาขา ${currentEmployee.branch} เรียบร้อยแล้ว!`);
+      onRefreshWorkspace();
+      if (newest) {
+        onSwitchFolder({ folderId: newest.id });
+      }
+      return;
+    }
+
+    if (mode === 'employee-branch' && branchFolder) {
+      await updateBranchFolder(currentEmployee.branch, branchFolder.id, {
+        name: folderNameEdit,
+        description: folderDescEdit,
+        color: folderColorEdit,
+        updatedBy: actorLabel,
+      });
+      setIsEditingFolderMeta(false);
+      showTempBanner(`อัปเดตโฟลเดอร์สาขา "${folderNameEdit.trim()}" เรียบร้อยแล้ว`);
+      onRefreshWorkspace();
       return;
     }
 
@@ -396,9 +507,32 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
     }
   };
 
+  const handleDeleteCurrentBranchFolder = async () => {
+    if (!branchFolder || !currentEmployee) return;
+    if (
+      !window.confirm(
+        `ต้องการลบโฟลเดอร์สาขา "${branchFolder.name}" ใช่หรือไม่?\n(ทุกคนในสาขา ${currentEmployee.branch} จะไม่สามารถเข้าถึงโฟลเดอร์นี้ได้)`
+      )
+    ) {
+      return;
+    }
+    const updated = await deleteBranchFolder(currentEmployee.branch, branchFolder.id);
+    showTempBanner(`ลบโฟลเดอร์สาขา "${branchFolder.name}" เรียบร้อยแล้ว`);
+    onRefreshWorkspace();
+    if (updated.length > 0) {
+      onSwitchFolder({ folderId: updated[0].id });
+    } else {
+      onBackToHome();
+    }
+  };
+
   // ค่าที่เลือกอยู่ใน Dropdown สลับโฟลเดอร์ด่วน
   const currentSwitcherValue =
-    mode === 'category' ? `cat:${activeFolderId}` : `folder:${activeFolderId}`;
+    mode === 'category'
+      ? `cat:${activeFolderId}`
+      : mode === 'employee-branch'
+      ? `branch:${activeFolderId}`
+      : `folder:${activeFolderId}`;
 
   const handleSwitcherSelectChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const val = e.target.value;
@@ -406,14 +540,24 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
       setFolderNameEdit('');
       setFolderDescEdit('');
       setFolderColorEdit('#ec4899');
+      setIsCreatingBranchFolder(false);
       setIsCreatingPersonalFolder(true);
+      setIsEditingFolderMeta(true);
+      return;
+    }
+    if (val === '__create_branch__') {
+      setFolderNameEdit('');
+      setFolderDescEdit('');
+      setFolderColorEdit('#10b981');
+      setIsCreatingPersonalFolder(false);
+      setIsCreatingBranchFolder(true);
       setIsEditingFolderMeta(true);
       return;
     }
     if (val.startsWith('cat:')) {
       onSwitchFolder({ categoryId: val.slice(4) });
-    } else if (val.startsWith('folder:')) {
-      onSwitchFolder({ folderId: val.slice(7) });
+    } else if (val.startsWith('branch:') || val.startsWith('folder:')) {
+      onSwitchFolder({ folderId: val.slice(val.indexOf(':') + 1) });
     }
   };
 
@@ -480,6 +624,20 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
                       <option value="__create_personal__">➕ สร้างโฟลเดอร์ส่วนตัวใหม่...</option>
                     </optgroup>
                   )}
+                  {currentEmployee && allBranchFolders.length > 0 && (
+                    <optgroup
+                      label={`🏢 โฟลเดอร์ประจำสาขา${
+                        currentEmployee.branch ? ` (${currentEmployee.branch})` : ''
+                      } - แชร์ในสาขา`}
+                    >
+                      {allBranchFolders.map((bf) => (
+                        <option key={bf.id} value={`branch:${bf.id}`}>
+                          🏢 {bf.name} ({bf.links.length} ลิงก์)
+                        </option>
+                      ))}
+                      <option value="__create_branch__">➕ สร้างโฟลเดอร์สาขาใหม่...</option>
+                    </optgroup>
+                  )}
                   {currentEmployee && allSheetFolders.length > 0 && (
                     <optgroup label="📂 โฟลเดอร์แผ่นงานพนักงาน (17 แผ่นงาน)">
                       {allSheetFolders.map((sf) => (
@@ -519,6 +677,25 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
                     <span>โฟลเดอร์ส่วนตัว</span>
                   </button>
                 )}
+
+              {/* ปุ่มลัดสลับเข้าโฟลเดอร์สาขาใน 1 คลิก */}
+              {currentEmployee &&
+                allBranchFolders.length > 0 &&
+                mode !== 'employee-branch' && (
+                  <button
+                    type="button"
+                    onClick={() => onSwitchFolder({ folderId: allBranchFolders[0].id })}
+                    className={`hidden md:inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl border text-xs font-bold transition ${
+                      isLightTheme
+                        ? 'bg-emerald-50 hover:bg-emerald-100 border-emerald-300 text-emerald-900'
+                        : 'bg-emerald-500/15 hover:bg-emerald-500/25 border-emerald-400/30 text-emerald-200'
+                    }`}
+                    title={`สลับไปที่โฟลเดอร์สาขา ${currentEmployee.branch}`}
+                  >
+                    <Building2 size={12} className="text-emerald-600" />
+                    <span>สาขา {currentEmployee.branch}</span>
+                  </button>
+                )}
             </div>
           </div>
 
@@ -542,7 +719,7 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
               </a>
             )}
 
-            {/* ปุ่มสร้างโฟลเดอร์ส่วนตัวใหม่ & แก้ไขชื่อโฟลเดอร์ & เพิ่มลิงก์ */}
+            {/* ปุ่มสร้างโฟลเดอร์ส่วนตัวใหม่ */}
             {currentEmployee && (
               <button
                 type="button"
@@ -550,6 +727,7 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
                   setFolderNameEdit('');
                   setFolderDescEdit('');
                   setFolderColorEdit('#ec4899');
+                  setIsCreatingBranchFolder(false);
                   setIsCreatingPersonalFolder(true);
                   setIsEditingFolderMeta(true);
                 }}
@@ -561,15 +739,41 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
                 title="สร้างโฟลเดอร์ส่วนตัวใหม่ของคุณ"
               >
                 <FolderPlus size={13} />
-                <span>+ โฟลเดอร์ส่วนตัว</span>
+                <span>+ ส่วนตัว</span>
               </button>
             )}
 
+            {/* ปุ่มสร้างโฟลเดอร์ประจำสาขาใหม่ */}
+            {currentEmployee && (
+              <button
+                type="button"
+                onClick={() => {
+                  setFolderNameEdit('');
+                  setFolderDescEdit('');
+                  setFolderColorEdit('#10b981');
+                  setIsCreatingPersonalFolder(false);
+                  setIsCreatingBranchFolder(true);
+                  setIsEditingFolderMeta(true);
+                }}
+                className={`px-2.5 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1 transition ${
+                  isLightTheme
+                    ? 'bg-emerald-50 hover:bg-emerald-100 border-emerald-300 text-emerald-800'
+                    : 'bg-emerald-500/15 hover:bg-emerald-500/25 border-emerald-400/35 text-emerald-200'
+                }`}
+                title={`สร้างโฟลเดอร์ใหม่แชร์เฉพาะพนักงานประจำสาขา ${currentEmployee.branch}`}
+              >
+                <Building2 size={13} />
+                <span>+ โฟลเดอร์สาขา</span>
+              </button>
+            )}
+
+            {/* ปุ่มแก้ไขโฟลเดอร์ส่วนตัว */}
             {mode === 'employee-personal' && personalFolder && canManageCurrentFolder && (
               <button
                 type="button"
                 onClick={() => {
                   setIsCreatingPersonalFolder(false);
+                  setIsCreatingBranchFolder(false);
                   setFolderNameEdit(personalFolder.name);
                   setFolderDescEdit(personalFolder.description);
                   setFolderColorEdit(personalFolder.color || '#ec4899');
@@ -583,6 +787,29 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
               >
                 <Pencil size={12} />
                 <span className="hidden sm:inline">แก้ไขโฟลเดอร์</span>
+              </button>
+            )}
+
+            {/* ปุ่มแก้ไขโฟลเดอร์ประจำสาขา */}
+            {mode === 'employee-branch' && branchFolder && canManageCurrentFolder && (
+              <button
+                type="button"
+                onClick={() => {
+                  setIsCreatingPersonalFolder(false);
+                  setIsCreatingBranchFolder(false);
+                  setFolderNameEdit(branchFolder.name);
+                  setFolderDescEdit(branchFolder.description);
+                  setFolderColorEdit(branchFolder.color || '#10b981');
+                  setIsEditingFolderMeta((prev) => !prev);
+                }}
+                className={`px-2.5 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1 transition ${
+                  isLightTheme
+                    ? 'bg-white hover:bg-slate-100 border-slate-300 text-slate-700'
+                    : 'bg-white/10 hover:bg-white/20 border-white/15 text-slate-200'
+                }`}
+              >
+                <Pencil size={12} />
+                <span className="hidden sm:inline">แก้ไขโฟลเดอร์สาขา</span>
               </button>
             )}
 
@@ -610,6 +837,8 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
             >
               {mode === 'employee-personal' ? (
                 <Star size={20} className="fill-white/90" />
+              ) : mode === 'employee-branch' ? (
+                <Building2 size={20} className="text-white" />
               ) : (
                 <Folder size={20} />
               )}
@@ -645,6 +874,16 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
                   >
                     <Pencil size={10} /> โฟลเดอร์ส่วนตัว ({currentEmployee?.code}) • เพิ่ม/แก้ไขลิงก์ได้
                   </span>
+                ) : mode === 'employee-branch' ? (
+                  <span
+                    className={`px-2.5 py-0.5 rounded-full border text-[11px] font-bold inline-flex items-center gap-1 ${
+                      isLightTheme
+                        ? 'bg-emerald-100 border-emerald-300 text-emerald-950'
+                        : 'bg-emerald-500/20 border-emerald-400/35 text-emerald-200'
+                    }`}
+                  >
+                    <Building2 size={10} /> แชร์เฉพาะสาขา ({currentEmployee?.branch || 'สาขา'}) • ทุกคนในสาขาเพิ่ม/ลบ/แก้ไขได้
+                  </span>
                 ) : !isEditMode ? (
                   <span
                     className={`px-2.5 py-0.5 rounded-full border text-[11px] font-semibold inline-flex items-center gap-1 ${
@@ -652,7 +891,7 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
                         ? 'bg-slate-100 border-slate-300 text-slate-700'
                         : 'bg-white/10 border-white/15 text-slate-300'
                     }`}
-                    title="ข้อมูลส่วนกลางแก้ไขได้เฉพาะแอดมิน พนักงานสามารถกด 'เก็บส่วนตัว' เพื่อนำไปแก้ไขต่อในโฟลเดอร์ส่วนตัวได้"
+                    title="ข้อมูลส่วนกลางแก้ไขได้เฉพาะแอดมิน พนักงานสามารถกด 'เก็บส่วนตัว' หรือ 'แชร์เข้าสาขา' เพื่อนำไปใช้งานต่อได้"
                   >
                     <Lock size={10} /> ส่วนกลาง (อ่านอย่างเดียว)
                   </span>
@@ -832,12 +1071,16 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
         </div>
       )}
 
-      {/* ฟอร์มสร้างหรือแก้ไขโฟลเดอร์ส่วนตัว */}
+      {/* ฟอร์มสร้างหรือแก้ไขโฟลเดอร์ส่วนตัว / โฟลเดอร์ประจำสาขา */}
       {isEditingFolderMeta && currentEmployee && (
         <form
           onSubmit={handleSaveFolderMeta}
           className={`p-4 rounded-2xl border-2 space-y-3 animate-fade-in ${
-            isLightTheme
+            isCreatingBranchFolder || mode === 'employee-branch'
+              ? isLightTheme
+                ? 'bg-white border-emerald-300 text-slate-800 shadow-md'
+                : 'bg-slate-950 border-emerald-500/40 text-white'
+              : isLightTheme
               ? 'bg-white border-pink-300 text-slate-800 shadow-md'
               : 'bg-slate-950 border-pink-500/40 text-white'
           }`}
@@ -845,13 +1088,27 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
           <div className="flex items-center justify-between">
             <span
               className={`text-xs sm:text-sm font-bold flex items-center gap-1.5 ${
-                isLightTheme ? 'text-pink-800' : 'text-pink-300'
+                isCreatingBranchFolder || mode === 'employee-branch'
+                  ? isLightTheme
+                    ? 'text-emerald-800'
+                    : 'text-emerald-300'
+                  : isLightTheme
+                  ? 'text-pink-800'
+                  : 'text-pink-300'
               }`}
             >
-              <FolderPlus size={15} />
+              {isCreatingBranchFolder || mode === 'employee-branch' ? (
+                <Building2 size={15} />
+              ) : (
+                <FolderPlus size={15} />
+              )}
               <span>
                 {isCreatingPersonalFolder
                   ? `สร้างโฟลเดอร์ส่วนตัวใหม่ (รหัสพนักงาน ${currentEmployee.code})`
+                  : isCreatingBranchFolder
+                  ? `สร้างโฟลเดอร์สาขาใหม่ (แชร์เฉพาะพนักงานสาขา ${currentEmployee.branch})`
+                  : mode === 'employee-branch'
+                  ? `แก้ไขชื่อ คำอธิบาย และสีโฟลเดอร์สาขา (${currentEmployee.branch})`
                   : 'แก้ไขชื่อ คำอธิบาย และสีโฟลเดอร์ส่วนตัว'}
               </span>
             </span>
@@ -860,6 +1117,7 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
               onClick={() => {
                 setIsEditingFolderMeta(false);
                 setIsCreatingPersonalFolder(false);
+                setIsCreatingBranchFolder(false);
               }}
               className={`p-1 rounded-lg ${
                 isLightTheme ? 'bg-slate-100 text-slate-600' : 'bg-white/10 text-slate-300'
@@ -874,7 +1132,11 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
               required
               value={folderNameEdit}
               onChange={(e) => setFolderNameEdit(e.target.value)}
-              placeholder="ชื่อโฟลเดอร์ส่วนตัว (เช่น งานประจำวัน, ลิงก์สาขา)"
+              placeholder={
+                isCreatingBranchFolder || mode === 'employee-branch'
+                  ? `ชื่อโฟลเดอร์สาขา (เช่น รายงานสาขา${currentEmployee.branch}, งานด่วน)`
+                  : 'ชื่อโฟลเดอร์ส่วนตัว (เช่น งานประจำวัน, ลิงก์สาขา)'
+              }
               className={`px-3.5 py-2 rounded-xl border text-xs sm:text-sm ${
                 isLightTheme
                   ? 'bg-slate-50 border-slate-300 text-slate-900'
@@ -915,6 +1177,7 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
 
             <div className="flex flex-wrap items-center gap-2">
               {!isCreatingPersonalFolder &&
+                !isCreatingBranchFolder &&
                 mode === 'employee-personal' &&
                 allPersonalFolders.length > 1 && (
                   <button
@@ -930,11 +1193,31 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
                     <span>ลบโฟลเดอร์นี้</span>
                   </button>
                 )}
+
+              {!isCreatingPersonalFolder &&
+                !isCreatingBranchFolder &&
+                mode === 'employee-branch' &&
+                branchFolder && (
+                  <button
+                    type="button"
+                    onClick={handleDeleteCurrentBranchFolder}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1 ${
+                      isLightTheme
+                        ? 'bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200'
+                        : 'bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30'
+                    }`}
+                  >
+                    <Trash2 size={12} />
+                    <span>ลบโฟลเดอร์สาขานี้</span>
+                  </button>
+                )}
+
               <button
                 type="button"
                 onClick={() => {
                   setIsEditingFolderMeta(false);
                   setIsCreatingPersonalFolder(false);
+                  setIsCreatingBranchFolder(false);
                 }}
                 className={`px-3 py-1.5 rounded-xl text-xs font-semibold ${
                   isLightTheme ? 'bg-slate-100 text-slate-700' : 'bg-white/10 text-slate-300'
@@ -944,9 +1227,17 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
               </button>
               <button
                 type="submit"
-                className="px-4 py-1.5 rounded-xl bg-gradient-to-r from-pink-600 to-indigo-600 hover:from-pink-500 hover:to-indigo-500 text-xs font-bold text-white shadow"
+                className={`px-4 py-1.5 rounded-xl text-xs font-bold text-white shadow ${
+                  isCreatingBranchFolder || mode === 'employee-branch'
+                    ? 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500'
+                    : 'bg-gradient-to-r from-pink-600 to-indigo-600 hover:from-pink-500 hover:to-indigo-500'
+                }`}
               >
-                {isCreatingPersonalFolder ? 'สร้างโฟลเดอร์ส่วนตัว' : 'บันทึกการแก้ไข'}
+                {isCreatingPersonalFolder
+                  ? 'สร้างโฟลเดอร์ส่วนตัว'
+                  : isCreatingBranchFolder
+                  ? 'สร้างโฟลเดอร์สาขา'
+                  : 'บันทึกการแก้ไข'}
               </button>
             </div>
           </div>
@@ -1482,7 +1773,24 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
                       </button>
                     )}
 
-                    {/* ปุ่มเปลี่ยนลิงก์ & ลบลิงก์: แสดงเฉพาะในโฟลเดอร์ส่วนตัวของพนักงาน หรือเมื่อแอดมินปลดล็อกเท่านั้น */}
+                    {/* ปุ่มเก็บเข้าโฟลเดอร์ประจำสาขา */}
+                    {mode === 'employee-sheet' && currentEmployee && allBranchFolders.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={(e) => handleBookmarkToBranch(item, e)}
+                        className={`px-2.5 py-1.5 rounded-xl border text-[11px] font-bold flex items-center gap-1 transition ${
+                          isLightTheme
+                            ? 'bg-emerald-50 hover:bg-emerald-100 border-emerald-300 text-emerald-950'
+                            : 'bg-emerald-500/15 hover:bg-emerald-500/30 border-emerald-400/30 text-emerald-200'
+                        }`}
+                        title={`แชร์ลิงก์นี้ไปยังโฟลเดอร์สาขา ${currentEmployee.branch} (ทุกคนในสาขาจะเห็นทันที)`}
+                      >
+                        <Building2 size={12} className="text-emerald-600" />
+                        <span>แชร์เข้าสาขา</span>
+                      </button>
+                    )}
+
+                    {/* ปุ่มเปลี่ยนลิงก์ & ลบลิงก์: แสดงเฉพาะในโฟลเดอร์ส่วนตัว/สาขา หรือเมื่อแอดมินปลดล็อกเท่านั้น */}
                     {canManageCurrentFolder && (
                       <>
                         <button
@@ -1499,7 +1807,7 @@ export const FolderPageView: React.FC<FolderPageViewProps> = ({
                           <span>เปลี่ยนลิงก์</span>
                         </button>
 
-                        {(mode === 'employee-personal' || item.isCustomAdded) && (
+                        {(mode === 'employee-personal' || mode === 'employee-branch' || item.isCustomAdded) && (
                           <button
                             type="button"
                             onClick={(e) => handleDeleteEmployeeLink(item, e)}

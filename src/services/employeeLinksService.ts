@@ -1,4 +1,5 @@
 import {
+  EmployeeBranchFolder,
   EmployeeLinkItem,
   EmployeePersonalFolder,
   EmployeeScheduleItem,
@@ -17,11 +18,13 @@ import { getSupabaseClient } from '../lib/supabase';
 const STORAGE_KEY_EMPLOYEE_FOLDERS = 'smart_hub_employee_folders_v1';
 const STORAGE_KEY_SHEET_OVERRIDES = 'smart_hub_sheet_link_overrides_v1';
 const STORAGE_KEY_PERSONAL_FOLDERS_PREFIX = 'smart_hub_emp_personal_folders_v1_';
+const STORAGE_KEY_BRANCH_FOLDERS_PREFIX = 'smart_hub_emp_branch_folders_v1_';
 const STORAGE_KEY_FOLDER_NOTES = 'smart_hub_folder_notes_v1';
 
 const SUPABASE_NOTES_ROW_ID = 'hub_folder_notes_v1';
 const SUPABASE_SHEET_OVERRIDES_ROW_ID = 'hub_sheet_overrides_v1';
 const SUPABASE_EMP_WORKSPACE_PREFIX = 'emp_workspace_';
+const SUPABASE_BRANCH_WORKSPACE_PREFIX = 'branch_workspace_';
 
 export interface SheetFolderOverridesStore {
   updatedLinks: Record<string, Partial<EmployeeLinkItem>>; // key = link.id
@@ -665,6 +668,322 @@ export async function movePersonalFolderOrder(
 }
 
 // ============================================================================
+// ส่วนที่ 1.5: โฟลเดอร์ประจำสาขา (แชร์เฉพาะสาขา ทุกคนในสาขาเพิ่ม/ลบ/แก้ไขได้)
+// ============================================================================
+function getBranchFoldersStorageKey(branchName: string): string {
+  return `${STORAGE_KEY_BRANCH_FOLDERS_PREFIX}${encodeURIComponent(branchName.trim())}`;
+}
+
+function createDefaultBranchFolder(branchName: string): EmployeeBranchFolder {
+  const cleanBranch = branchName.trim();
+  const now = new Date().toISOString();
+  return {
+    id: `branch-main-${cleanBranch}`,
+    branchName: cleanBranch,
+    name: `โฟลเดอร์สาขา${cleanBranch}`,
+    description: `ศูนย์รวมลิงก์งานและสมุดโน้ตสำหรับพนักงานประจำสาขา${cleanBranch} (ทุกคนในสาขาเพิ่ม/ลบ/แก้ไขได้)`,
+    color: '#10b981',
+    iconName: 'Building2',
+    links: [],
+    createdAt: now,
+    updatedAt: now,
+    updatedBy: 'ระบบสาขา',
+  };
+}
+
+export function getBranchFoldersForBranch(branchName?: string): EmployeeBranchFolder[] {
+  const cleanBranch = (branchName || '').trim();
+  if (!cleanBranch) return [];
+
+  try {
+    const raw = localStorage.getItem(getBranchFoldersStorageKey(cleanBranch));
+    if (raw) {
+      const parsed = JSON.parse(raw) as EmployeeBranchFolder[];
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch {
+    // ignore parse error
+  }
+
+  const initial = [createDefaultBranchFolder(cleanBranch)];
+  try {
+    localStorage.setItem(getBranchFoldersStorageKey(cleanBranch), JSON.stringify(initial));
+  } catch {
+    // ignore
+  }
+  return initial;
+}
+
+export async function persistBranchFoldersForBranch(
+  branchName: string,
+  folders: EmployeeBranchFolder[]
+): Promise<EmployeeBranchFolder[]> {
+  const cleanBranch = branchName.trim();
+  beginWorkspaceMutation();
+  try {
+    try {
+      localStorage.setItem(getBranchFoldersStorageKey(cleanBranch), JSON.stringify(folders));
+    } catch {
+      // ignore
+    }
+
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      try {
+        await supabase.from('app_settings').upsert({
+          id: `${SUPABASE_BRANCH_WORKSPACE_PREFIX}${cleanBranch}`,
+          hub_title: `Branch Workspace ${cleanBranch}`,
+          hub_subtitle: 'branch_folders_v1',
+          admin_pin: '0000',
+          wallpaper_id: 'aurora-night',
+          custom_wallpaper_url: JSON.stringify(folders),
+          icon_shape: 'squircle',
+          grid_columns: 4,
+          default_folder_layout: 'detail-2col',
+          updated_at: new Date().toISOString(),
+        });
+      } catch {
+        // ignore cloud sync error
+      }
+    }
+
+    return folders;
+  } finally {
+    endWorkspaceMutation();
+  }
+}
+
+export async function createBranchFolder(
+  branchName: string,
+  input: {
+    name: string;
+    description?: string;
+    color?: string;
+    iconName?: string;
+    updatedBy?: string;
+  },
+  actorName?: string
+): Promise<EmployeeBranchFolder[]> {
+  const cleanBranch = branchName.trim();
+  const current = getBranchFoldersForBranch(cleanBranch);
+  const now = new Date().toISOString();
+
+  const newFolder: EmployeeBranchFolder = {
+    id: `branch-${cleanBranch}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    branchName: cleanBranch,
+    name: input.name.trim() || `โฟลเดอร์สาขาใหม่`,
+    description:
+      (input.description || '').trim() ||
+      `โฟลเดอร์สำหรับเก็บลิงก์งานที่ใช้ร่วมกันเฉพาะพนักงานสาขา${cleanBranch}`,
+    color: input.color || '#10b981',
+    iconName: input.iconName || 'Building2',
+    links: [],
+    createdAt: now,
+    updatedAt: now,
+    updatedBy: actorName || input.updatedBy || 'พนักงานสาขา',
+  };
+
+  return persistBranchFoldersForBranch(cleanBranch, [...current, newFolder]);
+}
+
+export async function updateBranchFolder(
+  branchName: string,
+  folderId: string,
+  updates: {
+    name?: string;
+    description?: string;
+    color?: string;
+    iconName?: string;
+    updatedBy?: string;
+  },
+  actorName?: string
+): Promise<EmployeeBranchFolder[]> {
+  const cleanBranch = branchName.trim();
+  const current = getBranchFoldersForBranch(cleanBranch);
+  const now = new Date().toISOString();
+  const updater = actorName || updates.updatedBy;
+
+  const updated = current.map((folder) =>
+    folder.id === folderId
+      ? {
+          ...folder,
+          name: updates.name !== undefined ? updates.name.trim() || folder.name : folder.name,
+          description:
+            updates.description !== undefined ? updates.description.trim() : folder.description,
+          color: updates.color || folder.color,
+          iconName: updates.iconName || folder.iconName,
+          updatedAt: now,
+          updatedBy: updater || folder.updatedBy,
+        }
+      : folder
+  );
+
+  return persistBranchFoldersForBranch(cleanBranch, updated);
+}
+
+export async function deleteBranchFolder(
+  branchName: string,
+  folderId: string
+): Promise<EmployeeBranchFolder[]> {
+  const cleanBranch = branchName.trim();
+  const current = getBranchFoldersForBranch(cleanBranch);
+  const filtered = current.filter((f) => f.id !== folderId);
+  const next = filtered.length > 0 ? filtered : [createDefaultBranchFolder(cleanBranch)];
+  return persistBranchFoldersForBranch(cleanBranch, next);
+}
+
+export async function moveBranchFolderOrder(
+  branchName: string,
+  folderId: string,
+  direction: 'left' | 'right'
+): Promise<EmployeeBranchFolder[]> {
+  const cleanBranch = branchName.trim();
+  const current = getBranchFoldersForBranch(cleanBranch);
+  const index = current.findIndex((f) => f.id === folderId);
+  if (index === -1) return current;
+  const targetIndex = direction === 'left' ? index - 1 : index + 1;
+  if (targetIndex < 0 || targetIndex >= current.length) return current;
+
+  const next = [...current];
+  const [moved] = next.splice(index, 1);
+  next.splice(targetIndex, 0, moved);
+  return persistBranchFoldersForBranch(cleanBranch, next);
+}
+
+export async function addLinkToBranchFolder(
+  branchName: string,
+  folderId: string,
+  linkInput: {
+    title: string;
+    url: string;
+    codeOrTopic?: string;
+    description?: string;
+    badge?: string;
+    iconName?: string;
+    bgStyle?: string;
+    updatedBy?: string;
+  }
+): Promise<EmployeeBranchFolder[]> {
+  const cleanBranch = branchName.trim();
+  const current = getBranchFoldersForBranch(cleanBranch);
+  const now = new Date().toISOString();
+
+  let cleanUrl = linkInput.url.trim();
+  if (cleanUrl && !/^https?:\/\//i.test(cleanUrl)) {
+    cleanUrl = `https://${cleanUrl}`;
+  }
+
+  const detected = detectEmployeeLinkAppearance(cleanUrl);
+
+  const newLink: EmployeeLinkItem = {
+    id: `branch-link-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    folderId,
+    codeOrTopic: (linkInput.codeOrTopic || `งานสาขา${cleanBranch}`).trim(),
+    title: linkInput.title.trim() || cleanUrl,
+    url: cleanUrl,
+    description: (linkInput.description || '').trim() || `ลิงก์ที่ใช้ร่วมกันในสาขา${cleanBranch}`,
+    badge: linkInput.badge || detected.badge,
+    iconName: linkInput.iconName || detected.iconName,
+    bgStyle: linkInput.bgStyle || detected.bgStyle,
+    updatedAt: now,
+    updatedBy: linkInput.updatedBy || 'พนักงานสาขา',
+    isCustomAdded: true,
+  };
+
+  const updated = current.map((folder) =>
+    folder.id === folderId
+      ? {
+          ...folder,
+          links: [newLink, ...folder.links],
+          updatedAt: now,
+          updatedBy: linkInput.updatedBy || folder.updatedBy,
+        }
+      : folder
+  );
+
+  return persistBranchFoldersForBranch(cleanBranch, updated);
+}
+
+export async function updateLinkInBranchFolder(
+  branchName: string,
+  folderId: string,
+  linkId: string,
+  updates: {
+    title?: string;
+    url?: string;
+    codeOrTopic?: string;
+    description?: string;
+    updatedBy?: string;
+  }
+): Promise<EmployeeBranchFolder[]> {
+  const cleanBranch = branchName.trim();
+  const current = getBranchFoldersForBranch(cleanBranch);
+  const now = new Date().toISOString();
+
+  let cleanUrl = updates.url !== undefined ? updates.url.trim() : undefined;
+  if (cleanUrl && !/^https?:\/\//i.test(cleanUrl)) {
+    cleanUrl = `https://${cleanUrl}`;
+  }
+  const detected = cleanUrl ? detectEmployeeLinkAppearance(cleanUrl) : null;
+
+  const updated = current.map((folder) => {
+    if (folder.id !== folderId) return folder;
+    return {
+      ...folder,
+      links: folder.links.map((link) => {
+        if (link.id !== linkId) return link;
+        return {
+          ...link,
+          title: updates.title !== undefined ? updates.title.trim() || link.title : link.title,
+          url: cleanUrl || link.url,
+          codeOrTopic:
+            updates.codeOrTopic !== undefined
+              ? updates.codeOrTopic.trim() || link.codeOrTopic
+              : link.codeOrTopic,
+          description:
+            updates.description !== undefined ? updates.description.trim() : link.description,
+          badge: detected ? detected.badge : link.badge,
+          iconName: detected ? detected.iconName : link.iconName,
+          bgStyle: detected ? detected.bgStyle : link.bgStyle,
+          updatedAt: now,
+          updatedBy: updates.updatedBy || link.updatedBy,
+        };
+      }),
+      updatedAt: now,
+      updatedBy: updates.updatedBy || folder.updatedBy,
+    };
+  });
+
+  return persistBranchFoldersForBranch(cleanBranch, updated);
+}
+
+export async function removeLinkFromBranchFolder(
+  branchName: string,
+  folderId: string,
+  linkId: string,
+  actorName?: string
+): Promise<EmployeeBranchFolder[]> {
+  const cleanBranch = branchName.trim();
+  const current = getBranchFoldersForBranch(cleanBranch);
+  const now = new Date().toISOString();
+
+  const updated = current.map((folder) =>
+    folder.id === folderId
+      ? {
+          ...folder,
+          links: folder.links.filter((l) => l.id !== linkId),
+          updatedAt: now,
+          updatedBy: actorName || folder.updatedBy,
+        }
+      : folder
+  );
+
+  return persistBranchFoldersForBranch(cleanBranch, updated);
+}
+
+// ============================================================================
 // การตั้งค่ารูปแบบการแสดงผลและการจัดเรียงโฟลเดอร์บนคอมพิวเตอร์ (แยกตามพนักงาน)
 // ============================================================================
 export type FolderDisplayStyle = 'bookmark-bar' | 'desktop-icons' | 'cards';
@@ -997,17 +1316,23 @@ export async function togglePinFolderNote(
 // ============================================================================
 // ส่วนที่ 3: ซิงค์ข้อมูลโฟลเดอร์ส่วนตัว โน้ต และการแก้ไขลิงก์จาก Supabase Cloud
 // ============================================================================
-export async function syncEmployeeWorkspaceFromCloud(employeeCode?: string): Promise<{
+export async function syncEmployeeWorkspaceFromCloud(
+  employeeCode?: string,
+  branchName?: string
+): Promise<{
   personalFolders: EmployeePersonalFolder[];
+  branchFolders: EmployeeBranchFolder[];
   notes: FolderNoteItem[];
   employeeFolders: EmployeeSheetFolder[];
 }> {
   const cleanCode = (employeeCode || '').trim();
+  const cleanBranch = (branchName || '').trim();
   const supabase = getSupabaseClient();
 
   if (!supabase || isWorkspaceMutationRecent()) {
     return {
       personalFolders: cleanCode ? getPersonalFoldersForEmployee(cleanCode) : [],
+      branchFolders: cleanBranch ? getBranchFoldersForBranch(cleanBranch) : [],
       notes: getAllFolderNotes(),
       employeeFolders: getEmployeeFolders(),
     };
@@ -1018,6 +1343,9 @@ export async function syncEmployeeWorkspaceFromCloud(employeeCode?: string): Pro
     if (cleanCode) {
       idsToFetch.push(`${SUPABASE_EMP_WORKSPACE_PREFIX}${cleanCode}`);
     }
+    if (cleanBranch) {
+      idsToFetch.push(`${SUPABASE_BRANCH_WORKSPACE_PREFIX}${cleanBranch}`);
+    }
 
     const { data } = await supabase
       .from('app_settings')
@@ -1027,6 +1355,7 @@ export async function syncEmployeeWorkspaceFromCloud(employeeCode?: string): Pro
     if (isWorkspaceMutationRecent()) {
       return {
         personalFolders: cleanCode ? getPersonalFoldersForEmployee(cleanCode) : [],
+        branchFolders: cleanBranch ? getBranchFoldersForBranch(cleanBranch) : [],
         notes: getAllFolderNotes(),
         employeeFolders: getEmployeeFolders(),
       };
@@ -1069,7 +1398,6 @@ export async function syncEmployeeWorkspaceFromCloud(employeeCode?: string): Pro
               row.custom_wallpaper_url
             ) as EmployeePersonalFolder[];
             if (Array.isArray(cloudFolders) && cloudFolders.length > 0) {
-              // ตรวจสอบไม่ให้ข้อมูล Cloud ที่เก่ากว่าในเครื่องมาทับโฟลเดอร์ที่เพิ่งสร้างใหม่ในเครื่อง
               const localRaw = localStorage.getItem(getPersonalFoldersStorageKey(cleanCode));
               let shouldUseCloud = true;
               if (localRaw) {
@@ -1107,6 +1435,53 @@ export async function syncEmployeeWorkspaceFromCloud(employeeCode?: string): Pro
             // ignore invalid json
           }
         }
+        if (
+          cleanBranch &&
+          row.id === `${SUPABASE_BRANCH_WORKSPACE_PREFIX}${cleanBranch}` &&
+          row.custom_wallpaper_url
+        ) {
+          try {
+            const cloudBranchFolders = JSON.parse(
+              row.custom_wallpaper_url
+            ) as EmployeeBranchFolder[];
+            if (Array.isArray(cloudBranchFolders) && cloudBranchFolders.length > 0) {
+              const localBranchRaw = localStorage.getItem(getBranchFoldersStorageKey(cleanBranch));
+              let shouldUseBranchCloud = true;
+              if (localBranchRaw) {
+                try {
+                  const localBFolders = JSON.parse(localBranchRaw) as EmployeeBranchFolder[];
+                  if (Array.isArray(localBFolders) && localBFolders.length > 0) {
+                    const latestLocalTime = localBFolders.reduce(
+                      (max, f) => (f.updatedAt > max ? f.updatedAt : max),
+                      ''
+                    );
+                    const latestCloudTime = cloudBranchFolders.reduce(
+                      (max, f) => (f.updatedAt > max ? f.updatedAt : max),
+                      ''
+                    );
+                    if (
+                      localBFolders.length > cloudBranchFolders.length &&
+                      latestLocalTime >= latestCloudTime
+                    ) {
+                      shouldUseBranchCloud = false;
+                    }
+                  }
+                } catch {
+                  // ignore
+                }
+              }
+
+              if (shouldUseBranchCloud) {
+                localStorage.setItem(
+                  getBranchFoldersStorageKey(cleanBranch),
+                  JSON.stringify(cloudBranchFolders)
+                );
+              }
+            }
+          } catch {
+            // ignore invalid json
+          }
+        }
       }
     }
   } catch {
@@ -1115,6 +1490,7 @@ export async function syncEmployeeWorkspaceFromCloud(employeeCode?: string): Pro
 
   return {
     personalFolders: cleanCode ? getPersonalFoldersForEmployee(cleanCode) : [],
+    branchFolders: cleanBranch ? getBranchFoldersForBranch(cleanBranch) : [],
     notes: getAllFolderNotes(),
     employeeFolders: getEmployeeFolders(),
   };

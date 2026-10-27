@@ -135,3 +135,16 @@ export interface EmployeePersonalFolder {
   createdAt: string;
   updatedAt: string;
 }
+
+export interface EmployeeBranchFolder {
+  id: string;
+  branchName: string;   // ชื่อสาขา เช่น "สันกำแพง", "บางพลี"
+  name: string;         // ชื่อโฟลเดอร์สาขา
+  description: string;  // คำอธิบายโฟลเดอร์สาขา
+  color: string;        // สีประจำโฟลเดอร์
+  iconName: string;     // ชื่อไอคอน
+  links: EmployeeLinkItem[];
+  createdAt: string;
+  updatedAt: string;
+  updatedBy?: string;   // ชื่อ/รหัสพนักงานในสาขาที่แก้ไขล่าสุด
+}
