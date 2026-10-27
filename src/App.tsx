@@ -15,7 +15,7 @@ import {
   rectSortingStrategy,
   sortableKeyboardCoordinates,
 } from '@dnd-kit/sortable';
-import { AppLink, AppSettings, Category, FolderLayout } from './types/app';
+import { AppLink, AppSettings, Category, EmployeeProfile, FolderLayout } from './types/app';
 import { DEFAULT_CATEGORIES, DEFAULT_SETTINGS, WALLPAPER_PRESETS } from './constants/wallpapers';
 import {
   fetchAllHubData,
@@ -31,6 +31,13 @@ import {
   setLocalCategories,
   setLocalSettings,
 } from './services/linkService';
+import {
+  getCachedEmployees,
+  getLoggedInEmployee,
+  saveLoggedInEmployee,
+  syncEmployeesFromGoogleSheet,
+  calculateWorkTenure,
+} from './services/employeeService';
 import { AppIconCard } from './components/AppIconCard';
 import { getSupabaseClient } from './lib/supabase';
 import { DockBar } from './components/DockBar';
@@ -40,6 +47,7 @@ import { FolderModal } from './components/FolderModal';
 import { SpotlightModal } from './components/SpotlightModal';
 import { SettingsModal } from './components/SettingsModal';
 import { AdminDashboardModal } from './components/AdminDashboardModal';
+import { EmployeePortalModal } from './components/EmployeePortalModal';
 import { AndroidInstallPrompt } from './components/AndroidInstallPrompt';
 import { IconRenderer } from './components/IconRenderer';
 import {
@@ -62,6 +70,11 @@ import {
   Smartphone,
   Pin,
   Database,
+  IdCard,
+  UserCheck,
+  Building2,
+  Briefcase,
+  LogOut,
 } from 'lucide-react';
 
 export function App() {
@@ -91,8 +104,35 @@ export function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isAdminDashboardOpen, setIsAdminDashboardOpen] = useState(false);
 
+  // Employee Portal & Google Sheets Sync State
+  const [employees, setEmployees] = useState<EmployeeProfile[]>(() => getCachedEmployees());
+  const [currentEmployee, setCurrentEmployee] = useState<EmployeeProfile | null>(() =>
+    getLoggedInEmployee()
+  );
+  const [isEmployeePortalOpen, setIsEmployeePortalOpen] = useState(false);
+  const [isSyncingEmployees, setIsSyncingEmployees] = useState(false);
+  const [isLiveEmployeeSheet, setIsLiveEmployeeSheet] = useState(false);
+
   // Clock for Mobile Status Bar
   const [now, setNow] = useState(new Date());
+
+  const handleRefreshEmployees = useCallback(async () => {
+    setIsSyncingEmployees(true);
+    const res = await syncEmployeesFromGoogleSheet();
+    setEmployees(res.employees);
+    setIsLiveEmployeeSheet(res.fromLiveSheet);
+    // หากพนักงานล็อกอินอยู่ ให้อัปเดตข้อมูลล่าสุดจาก Sheet ด้วย
+    setCurrentEmployee((prev) => {
+      if (!prev) return null;
+      const updated = res.employees.find((e) => e.code === prev.code);
+      if (updated) {
+        saveLoggedInEmployee(updated);
+        return updated;
+      }
+      return prev;
+    });
+    setIsSyncingEmployees(false);
+  }, []);
 
   const loadHubData = useCallback(async (silent = false) => {
     if (silent && isMutationInProgressOrRecent()) {
@@ -121,6 +161,7 @@ export function App() {
 
   useEffect(() => {
     loadHubData(false);
+    handleRefreshEmployees();
 
     // 1. ซิงค์ข้อมูลแบบเงียบอัตโนมัติเมื่อสลับแท็บหรือสลับแอปมือถือกลับมา
     const handleVisibilityChange = () => {
@@ -162,7 +203,17 @@ export function App() {
         supabase.removeChannel(channel);
       }
     };
-  }, [loadHubData]);
+  }, [loadHubData, handleRefreshEmployees]);
+
+  const handleEmployeeLogin = (employee: EmployeeProfile) => {
+    setCurrentEmployee(employee);
+    saveLoggedInEmployee(employee);
+  };
+
+  const handleEmployeeLogout = () => {
+    setCurrentEmployee(null);
+    saveLoggedInEmployee(null);
+  };
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 30000);
@@ -437,8 +488,42 @@ export function App() {
             </span>
           </div>
 
-          {/* แถบปุ่มติดตั้งแอป Android + สถานะโหมดแก้ไข */}
+          {/* แถบปุ่มติดตั้งแอป Android + ปุ่มพนักงาน + สถานะโหมดแก้ไข */}
           <div className="flex items-center gap-2">
+            {/* ปุ่มเข้าสู่ระบบพนักงาน / ดูบัตรพนักงานดิจิทัล */}
+            <button
+              type="button"
+              onClick={() => setIsEmployeePortalOpen(true)}
+              className={`inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-full border text-[11px] font-semibold shadow-sm transition ${
+                currentEmployee
+                  ? isLightTheme
+                    ? 'bg-emerald-50 hover:bg-emerald-100 border-emerald-300 text-emerald-800'
+                    : 'bg-emerald-500/20 hover:bg-emerald-500/30 border-emerald-400/40 text-emerald-200'
+                  : isLightTheme
+                  ? 'bg-sky-600 hover:bg-sky-500 border-sky-600 text-white'
+                  : 'bg-sky-500/25 hover:bg-sky-500/35 border-sky-400/40 text-sky-200'
+              }`}
+              title={
+                currentEmployee
+                  ? `${currentEmployee.fullName} (${currentEmployee.code}) - คลิกเพื่อดูบัตรพนักงาน`
+                  : 'เข้าสู่ระบบสำหรับพนักงานด้วยรหัสพนักงาน'
+              }
+            >
+              {currentEmployee ? (
+                <>
+                  <UserCheck size={12} className="shrink-0" />
+                  <span className="truncate max-w-[115px] sm:max-w-[160px]">
+                    {currentEmployee.firstName} ({currentEmployee.code})
+                  </span>
+                </>
+              ) : (
+                <>
+                  <IdCard size={13} className="shrink-0" />
+                  <span>สำหรับพนักงาน</span>
+                </>
+              )}
+            </button>
+
             {/* สถานะการเชื่อมต่อฐานข้อมูล */}
             {dataSource === 'supabase' && (
               <span
@@ -590,6 +675,85 @@ export function App() {
                 Ctrl K
               </kbd>
             </button>
+
+            {/* กล่องข้อมูลพนักงานบน Sidebar คอมพิวเตอร์ */}
+            <div
+              onClick={() => setIsEmployeePortalOpen(true)}
+              className={`p-3.5 rounded-2xl border cursor-pointer transition ${
+                currentEmployee
+                  ? isLightTheme
+                    ? 'bg-gradient-to-br from-emerald-50 to-sky-50 hover:from-emerald-100/80 hover:to-sky-100/80 border-emerald-200'
+                    : 'bg-gradient-to-br from-emerald-950/60 to-sky-950/50 hover:from-emerald-900/60 hover:to-sky-900/50 border-emerald-400/30'
+                  : isLightTheme
+                  ? 'bg-sky-50/80 hover:bg-sky-100/80 border-sky-200'
+                  : 'bg-sky-500/10 hover:bg-sky-500/20 border-sky-400/25'
+              }`}
+            >
+              {currentEmployee ? (
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span
+                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                        isLightTheme
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : 'bg-emerald-500/25 text-emerald-300'
+                      }`}
+                    >
+                      <UserCheck size={11} /> รหัส {currentEmployee.code}
+                    </span>
+                    <span
+                      className={`text-[10px] font-medium ${
+                        isLightTheme ? 'text-sky-700' : 'text-sky-300'
+                      }`}
+                    >
+                      ดูบัตรพนักงาน →
+                    </span>
+                  </div>
+                  <p
+                    className={`text-xs font-bold truncate ${
+                      isLightTheme ? 'text-slate-900' : 'text-white'
+                    }`}
+                  >
+                    {currentEmployee.fullName}
+                  </p>
+                  <p
+                    className={`text-[11px] truncate ${
+                      isLightTheme ? 'text-slate-600' : 'text-slate-300'
+                    }`}
+                  >
+                    {currentEmployee.position} • สาขา{currentEmployee.branch}
+                  </p>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2.5">
+                  <div
+                    className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                      isLightTheme
+                        ? 'bg-sky-600 text-white shadow-sm'
+                        : 'bg-sky-500/25 text-sky-300 border border-sky-400/30'
+                    }`}
+                  >
+                    <IdCard size={18} />
+                  </div>
+                  <div className="min-w-0">
+                    <p
+                      className={`text-xs font-bold ${
+                        isLightTheme ? 'text-slate-900' : 'text-white'
+                      }`}
+                    >
+                      เข้าสู่ระบบสำหรับพนักงาน
+                    </p>
+                    <p
+                      className={`text-[10px] truncate ${
+                        isLightTheme ? 'text-slate-600' : 'text-slate-300'
+                      }`}
+                    >
+                      ล็อกอินด้วยรหัสพนักงาน ({employees.length} คน)
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* รายการหมวดหมู่ / โฟลเดอร์ สำหรับคลิกบนจอคอมพิวเตอร์ */}
             <div className="space-y-1.5">
@@ -951,6 +1115,127 @@ export function App() {
                 </button>
               </div>
             </div>
+
+        {/* แถบการ์ดข้อมูลพนักงานที่เข้าสู่ระบบ หรือปุ่มเข้าสู่ระบบพนักงาน */}
+        {currentEmployee ? (
+          <div
+            className={`mb-5 p-4 rounded-3xl backdrop-blur-2xl border shadow-xl flex flex-wrap items-center justify-between gap-3 transition-colors ${
+              isLightTheme
+                ? 'bg-gradient-to-r from-white/95 via-sky-50/90 to-emerald-50/90 border-sky-200/90 text-slate-800 shadow-sky-900/5'
+                : 'bg-gradient-to-r from-slate-900/85 via-sky-950/65 to-emerald-950/55 border-sky-400/30 text-white'
+            }`}
+          >
+            <div className="flex items-center gap-3.5 min-w-0">
+              <div
+                onClick={() => setIsEmployeePortalOpen(true)}
+                className="w-12 h-12 rounded-2xl bg-gradient-to-br from-sky-500 to-indigo-600 text-white font-bold text-lg flex items-center justify-center shadow-lg shadow-sky-500/25 shrink-0 cursor-pointer"
+              >
+                {currentEmployee.firstName.slice(0, 1)}
+              </div>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                      isLightTheme
+                        ? 'bg-emerald-100 border-emerald-300 text-emerald-800'
+                        : 'bg-emerald-500/20 border-emerald-400/30 text-emerald-300'
+                    }`}
+                  >
+                    รหัสพนักงาน {currentEmployee.code}
+                  </span>
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
+                      isLightTheme
+                        ? 'bg-sky-100 border-sky-200 text-sky-800'
+                        : 'bg-sky-500/20 border-sky-400/30 text-sky-200'
+                    }`}
+                  >
+                    สาขา{currentEmployee.branch} (Zone {currentEmployee.zone})
+                  </span>
+                </div>
+                <h2
+                  className={`text-sm sm:text-base font-bold truncate mt-1 ${
+                    isLightTheme ? 'text-slate-900' : 'text-white'
+                  }`}
+                >
+                  สวัสดีคุณ {currentEmployee.fullName}
+                </h2>
+                <p
+                  className={`text-xs flex flex-wrap items-center gap-x-3 gap-y-0.5 ${
+                    isLightTheme ? 'text-slate-600' : 'text-slate-300'
+                  }`}
+                >
+                  <span className="inline-flex items-center gap-1">
+                    <Briefcase size={12} className="text-sky-500" /> {currentEmployee.position}
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <Building2 size={12} className="text-indigo-400" /> อายุงาน:{' '}
+                    {calculateWorkTenure(currentEmployee.startDate)}
+                  </span>
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setIsEmployeePortalOpen(true)}
+                className="px-3.5 py-2 rounded-2xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-md shadow-sky-600/25 transition"
+              >
+                <IdCard size={15} />
+                <span>เปิดหน้าสำหรับพนักงาน</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleEmployeeLogout}
+                title="ออกจากระบบพนักงาน"
+                className={`p-2 rounded-2xl border text-xs transition ${
+                  isLightTheme
+                    ? 'bg-white hover:bg-rose-50 border-slate-200 text-slate-600 hover:text-rose-600'
+                    : 'bg-white/10 hover:bg-rose-500/20 border-white/15 text-slate-300 hover:text-rose-300'
+                }`}
+              >
+                <LogOut size={15} />
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div
+            onClick={() => setIsEmployeePortalOpen(true)}
+            className={`mb-5 p-3.5 rounded-2xl backdrop-blur-xl border flex items-center justify-between gap-3 cursor-pointer transition ${
+              isLightTheme
+                ? 'bg-white/85 hover:bg-white border-sky-200/90 text-slate-800 shadow-sm'
+                : 'bg-white/10 hover:bg-white/15 border-white/15 text-white'
+            }`}
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <div
+                className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${
+                  isLightTheme
+                    ? 'bg-sky-100 text-sky-700 border border-sky-200'
+                    : 'bg-sky-500/25 text-sky-300 border border-sky-400/30'
+                }`}
+              >
+                <IdCard size={20} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs sm:text-sm font-bold truncate">
+                  สำหรับพนักงาน: เข้าสู่ระบบด้วยรหัสพนักงาน 6 หลัก
+                </p>
+                <p
+                  className={`text-[11px] truncate ${
+                    isLightTheme ? 'text-slate-500' : 'text-slate-300'
+                  }`}
+                >
+                  ตรวจสอบข้อมูลบัตรพนักงาน สาขา ตำแหน่ง อายุงาน และเพื่อนร่วมสาขา (ซิงค์จากแผ่นงาน &quot;พนักงาน&quot;)
+                </p>
+              </div>
+            </div>
+            <span className="px-3 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold shrink-0 shadow">
+              เข้าสู่ระบบ
+            </span>
+          </div>
+        )}
 
         {/* แถบแจ้งเตือนโหมดแก้ไข (Admin Edit Banner) */}
         {isEditMode && (
@@ -1392,6 +1677,9 @@ export function App() {
         settings={settings}
         dataSource={dataSource}
         supabaseError={supabaseError}
+        employees={employees}
+        isSyncingEmployees={isSyncingEmployees}
+        onRefreshEmployees={handleRefreshEmployees}
         onClose={() => setIsAdminDashboardOpen(false)}
         onAddNewLink={(catId, isDock) => openAddLinkModal(catId || activeCategoryId, isDock || false)}
         onEditLink={(link) => openEditLinkModal(link)}
@@ -1403,6 +1691,20 @@ export function App() {
         onDeleteCategory={handleDeleteCategory}
         onOpenAppearanceSettings={() => setIsSettingsOpen(true)}
         onReloadFromSupabase={loadHubData}
+      />
+
+      <EmployeePortalModal
+        isOpen={isEmployeePortalOpen}
+        employees={employees}
+        currentEmployee={currentEmployee}
+        links={visibleLinks}
+        iconShape={settings.icon_shape}
+        isSyncingSheet={isSyncingEmployees}
+        isLiveSheet={isLiveEmployeeSheet}
+        onLoginSuccess={handleEmployeeLogin}
+        onLogout={handleEmployeeLogout}
+        onRefreshSheet={handleRefreshEmployees}
+        onClose={() => setIsEmployeePortalOpen(false)}
       />
 
       <SettingsModal

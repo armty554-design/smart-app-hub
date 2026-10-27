@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { AppLink, AppSettings, Category, FolderLayout, IconShape } from '../types/app';
+import { AppLink, AppSettings, Category, EmployeeProfile, FolderLayout, IconShape } from '../types/app';
 import { IconRenderer } from './IconRenderer';
 import {
   getSupabaseCredentials,
@@ -7,6 +7,11 @@ import {
   isSupabaseConfigured,
 } from '../lib/supabase';
 import { pushLocalDataToSupabase } from '../services/linkService';
+import {
+  calculateWorkTenure,
+  getEmployeeSheetUrl,
+  setEmployeeSheetUrl,
+} from '../services/employeeService';
 import rawSqlSchema from '../../supabase/schema.sql?raw';
 import {
   X,
@@ -34,6 +39,7 @@ import {
   ArrowUp,
   ArrowDown,
   Files,
+  Users,
 } from 'lucide-react';
 
 interface AdminDashboardModalProps {
@@ -41,6 +47,8 @@ interface AdminDashboardModalProps {
   links: AppLink[];
   categories: Category[];
   settings: AppSettings;
+  employees?: EmployeeProfile[];
+  isSyncingEmployees?: boolean;
   dataSource: 'supabase' | 'local';
   supabaseError?: string;
   onClose: () => void;
@@ -53,6 +61,7 @@ interface AdminDashboardModalProps {
   onUpsertCategory: (category: Category) => Promise<void>;
   onDeleteCategory: (categoryId: string) => Promise<void>;
   onReloadFromSupabase: () => Promise<void>;
+  onRefreshEmployees?: (customUrl?: string) => Promise<void>;
   onOpenAppearanceSettings: () => void;
 }
 
@@ -61,6 +70,8 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   links,
   categories,
   settings,
+  employees = [],
+  isSyncingEmployees = false,
   dataSource,
   supabaseError,
   onClose,
@@ -73,14 +84,20 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   onUpsertCategory,
   onDeleteCategory,
   onReloadFromSupabase,
+  onRefreshEmployees,
   onOpenAppearanceSettings,
 }) => {
-  const [activeTab, setActiveTab] = useState<'links' | 'categories' | 'supabase'>('links');
+  const [activeTab, setActiveTab] = useState<'links' | 'categories' | 'employees' | 'supabase'>('links');
 
   // ตัวกรองตารางลิงก์
   const [searchQuery, setSearchQuery] = useState('');
   const [filterCatId, setFilterCatId] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'hidden' | 'dock'>('all');
+
+  // ตัวกรองตารางพนักงาน
+  const [empSearch, setEmpSearch] = useState('');
+  const [empBranchFilter, setEmpBranchFilter] = useState<string>('all');
+  const [sheetUrlInput, setSheetUrlInput] = useState(getEmployeeSheetUrl());
 
   // ฟอร์มสร้างหมวดหมู่ใหม่
   const [newCatName, setNewCatName] = useState('');
@@ -268,6 +285,19 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
             >
               <Layers size={15} />
               จัดการหมวดหมู่ & รูปแบบโฟลเดอร์ ({categories.length})
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('employees')}
+              className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold border-b-2 whitespace-nowrap transition ${
+                activeTab === 'employees'
+                  ? 'border-sky-400 text-sky-300 bg-sky-500/10 rounded-t-xl'
+                  : 'border-transparent text-slate-400 hover:text-white'
+              }`}
+            >
+              <Users size={15} />
+              รายชื่อพนักงาน Google Sheets ({employees.length})
             </button>
 
             <button
@@ -825,6 +855,156 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
                     {syncMessage.text}
                   </p>
                 )}
+              </div>
+            </div>
+          )}
+
+          {/* =========================================================================
+              TAB 4: รายชื่อพนักงานจาก Google Sheets (แผ่นงาน "พนักงาน")
+             ========================================================================= */}
+          {activeTab === 'employees' && (
+            <div className="space-y-4">
+              {/* กล่องลิงก์ Google Sheets แผ่นงาน "พนักงาน" */}
+              <div className="p-4 rounded-2xl bg-slate-950/70 border border-white/10 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+                      <Users size={16} className="text-sky-400" />
+                      <span>เชื่อมต่อฐานข้อมูลพนักงานจาก Google Sheets (แผ่นงาน "พนักงาน")</span>
+                    </h4>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      พนักงานสามารถใช้ <strong className="text-sky-300">รหัสพนักงาน (คอลัมน์ B)</strong> ล็อกอินที่หน้าเว็บได้ทันที
+                    </p>
+                  </div>
+
+                  <a
+                    href={sheetUrlInput}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3 py-1.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-400/30 text-xs font-semibold text-emerald-300 flex items-center gap-1.5 transition"
+                  >
+                    <ExternalLink size={13} />
+                    เปิดไฟล์ Google Sheets ต้นฉบับ
+                  </a>
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <input
+                    type="text"
+                    value={sheetUrlInput}
+                    onChange={(e) => setSheetUrlInput(e.target.value)}
+                    placeholder="วางลิงก์ Google Sheets แผ่นงาน พนักงาน..."
+                    className="flex-1 px-3.5 py-2 rounded-xl bg-slate-900 border border-white/15 text-xs text-white font-mono focus:outline-none focus:border-sky-400"
+                  />
+                  <button
+                    type="button"
+                    disabled={isSyncingEmployees}
+                    onClick={async () => {
+                      setEmployeeSheetUrl(sheetUrlInput);
+                      if (onRefreshEmployees) {
+                        await onRefreshEmployees(sheetUrlInput);
+                      }
+                    }}
+                    className="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-xs font-semibold text-white flex items-center justify-center gap-1.5 shadow transition shrink-0"
+                  >
+                    <RefreshCw size={14} className={isSyncingEmployees ? 'animate-spin' : ''} />
+                    <span>{isSyncingEmployees ? 'กำลังซิงค์...' : 'ซิงค์รายชื่อล่าสุด'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* แถบค้นหาและกรองสาขา */}
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-slate-950/60 p-3.5 rounded-2xl border border-white/10">
+                <div className="relative flex-1">
+                  <Search size={15} className="absolute left-3.5 top-2.5 text-slate-400" />
+                  <input
+                    type="text"
+                    value={empSearch}
+                    onChange={(e) => setEmpSearch(e.target.value)}
+                    placeholder="ค้นหารหัสพนักงาน (เช่น 171785), ชื่อ-นามสกุล, ตำแหน่ง, สาขา..."
+                    className="w-full pl-9 pr-4 py-2 rounded-xl bg-slate-900 border border-white/15 text-xs text-white focus:outline-none focus:border-sky-400"
+                  />
+                </div>
+
+                <select
+                  value={empBranchFilter}
+                  onChange={(e) => setEmpBranchFilter(e.target.value)}
+                  className="px-3 py-2 rounded-xl bg-slate-900 border border-white/15 text-xs text-slate-200 focus:outline-none focus:border-sky-400"
+                >
+                  <option value="all">ทุกสาขา ({employees.length} คน)</option>
+                  {Array.from(new Set(employees.map((e) => e.branch).filter(Boolean))).map((b) => (
+                    <option key={b} value={b}>
+                      สาขา {b} ({employees.filter((e) => e.branch === b).length} คน)
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* ตารางรายชื่อพนักงาน */}
+              <div className="rounded-2xl border border-white/10 bg-slate-950/60 overflow-hidden">
+                <div className="overflow-x-auto max-h-[48vh]">
+                  <table className="w-full text-left border-collapse">
+                    <thead className="sticky top-0 bg-slate-900/95 backdrop-blur-md z-10">
+                      <tr className="border-b border-white/10 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                        <th className="py-3 px-4 w-16">#</th>
+                        <th className="py-3 px-4">รหัสพนักงาน</th>
+                        <th className="py-3 px-4">ชื่อ - นามสกุล</th>
+                        <th className="py-3 px-4">ตำแหน่ง</th>
+                        <th className="py-3 px-4">สาขา / Zone</th>
+                        <th className="py-3 px-4">วันที่เริ่มงาน (อายุงาน)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/10 text-xs">
+                      {employees
+                        .filter((emp) => {
+                          if (empBranchFilter !== 'all' && emp.branch !== empBranchFilter) return false;
+                          const q = empSearch.trim().toLowerCase();
+                          if (!q) return true;
+                          return (
+                            emp.code.toLowerCase().includes(q) ||
+                            emp.fullName.toLowerCase().includes(q) ||
+                            emp.position.toLowerCase().includes(q) ||
+                            emp.branch.toLowerCase().includes(q) ||
+                            emp.zone.toLowerCase().includes(q)
+                          );
+                        })
+                        .map((emp, idx) => (
+                          <tr key={emp.code} className="hover:bg-white/5 transition">
+                            <td className="py-2.5 px-4 text-slate-500 font-mono">
+                              {emp.seq || idx + 1}
+                            </td>
+                            <td className="py-2.5 px-4">
+                              <span className="px-2.5 py-1 rounded-lg bg-sky-500/15 border border-sky-400/30 font-mono font-bold text-sky-300">
+                                {emp.code}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-4 font-semibold text-white">{emp.fullName}</td>
+                            <td className="py-2.5 px-4 text-slate-300">{emp.position || '-'}</td>
+                            <td className="py-2.5 px-4">
+                              <span className="text-slate-200">{emp.branch || '-'}</span>
+                              {emp.zone && (
+                                <span className="ml-1.5 px-1.5 py-0.5 rounded bg-white/10 text-[10px] text-amber-300 font-semibold">
+                                  Zone {emp.zone}
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-2.5 px-4 text-slate-400">
+                              {emp.startDate ? (
+                                <span>
+                                  {emp.startDate}{' '}
+                                  <span className="text-emerald-400 text-[11px]">
+                                    ({calculateWorkTenure(emp.startDate)})
+                                  </span>
+                                </span>
+                              ) : (
+                                '-'
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           )}

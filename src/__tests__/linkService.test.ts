@@ -14,6 +14,12 @@ import {
 import { AppLink, Category } from '../types/app';
 import { ICON_LIBRARY, BG_COLOR_PRESETS } from '../constants/icons';
 import { WALLPAPER_PRESETS } from '../constants/wallpapers';
+import {
+  getCachedEmployees,
+  findEmployeeByCode,
+  parseEmployeesFromCsv,
+  calculateWorkTenure,
+} from '../services/employeeService';
 
 describe('App Hub Launcher - Link & Icon Studio Service', () => {
   beforeEach(() => {
@@ -154,5 +160,33 @@ describe('App Hub Launcher - Link & Icon Studio Service', () => {
     expect(lightThemes.some((w) => w.id === 'sky-white')).toBe(true);
     expect(lightThemes.length).toBeGreaterThanOrEqual(5);
     expect(darkThemes.length).toBeGreaterThanOrEqual(6);
+  });
+
+  it('authenticates employees by Employee ID from the "พนักงาน" Google Sheet dataset', () => {
+    const employees = getCachedEmployees();
+    expect(employees.length).toBeGreaterThanOrEqual(170);
+
+    // ตรวจสอบรหัสพนักงานจริงจากแผ่นงาน "พนักงาน"
+    const emp1 = findEmployeeByCode('171785', employees);
+    expect(emp1).toBeDefined();
+    expect(emp1?.firstName).toBe('หทัยวรรณ');
+    expect(emp1?.branch).toBe('บางพลี');
+    expect(emp1?.position).toBe('ผู้จัดการสาขา');
+
+    const emp1b = findEmployeeByCode('171781', employees);
+    expect(emp1b).toBeDefined();
+    expect(emp1b?.firstName).toBe('ปรีชา');
+
+    const emp2 = findEmployeeByCode('110208', employees);
+    expect(emp2).toBeDefined();
+    expect(emp2?.branch).toBe('วังน้อย');
+
+    // ทดสอบการแปลง CSV จาก Google Sheets
+    const sampleCsv = `"ลำดับ","รหัส","","zone","สาขา","คำนำหน้า","ชื่อ","สกุล","ตำแหน่ง","วันที่เริ่มงาน"\n"1","999888","","A","สุขุมวิท 50","นาย","ทดสอบ","ระบบ","ผู้จัดการสาขา","01/05/2020"`;
+    const parsed = parseEmployeesFromCsv(sampleCsv);
+    expect(parsed.length).toBe(1);
+    expect(parsed[0].code).toBe('999888');
+    expect(parsed[0].fullName).toBe('นายทดสอบ ระบบ');
+    expect(calculateWorkTenure('01/05/2020')).toContain('ปี');
   });
 });

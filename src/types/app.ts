@@ -58,3 +58,16 @@ export interface BgColorPreset {
   value: string;
   type: 'gradient' | 'solid';
 }
+
+export interface EmployeeProfile {
+  seq: string;
+  code: string; // รหัสพนักงาน เช่น 171785
+  zone: string; // โซน เช่น D, B, A, C, AD
+  branch: string; // สาขา เช่น บางพลี, สุขุมวิท 50, วังน้อย
+  prefix: string; // คำนำหน้า เช่น นาย, นางสาว
+  firstName: string; // ชื่อ
+  lastName: string; // สกุล
+  fullName: string; // ชื่อ-สกุลเต็ม
+  position: string; // ตำแหน่ง
+  startDate: string; // วันที่เริ่มงาน (DD/MM/YYYY)
+}
