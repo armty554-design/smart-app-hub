@@ -76,10 +76,12 @@ interface EmployeePortalModalProps {
   isLiveSheet: boolean;
   initialFolderId?: string | null;
   requireLogin?: boolean;
+  pendingFolderBanner?: string | null;
   onLoginSuccess: (employee: EmployeeProfile) => void;
   onLogout: () => void;
   onRefreshSheet: () => Promise<void>;
   onWorkspaceChanged?: () => void;
+  onOpenFolderPage?: (folderId: string) => void;
   onClose: () => void;
 }
 
@@ -102,10 +104,12 @@ export const EmployeePortalModal: React.FC<EmployeePortalModalProps> = ({
   isLiveSheet,
   initialFolderId = null,
   requireLogin = false,
+  pendingFolderBanner = null,
   onLoginSuccess,
   onLogout,
   onRefreshSheet,
   onWorkspaceChanged,
+  onOpenFolderPage,
   onClose,
 }) => {
   const [enteredCode, setEnteredCode] = useState('');
@@ -562,6 +566,11 @@ export const EmployeePortalModal: React.FC<EmployeePortalModalProps> = ({
                 กรอก <strong className="text-sky-300">รหัสพนักงาน 6 หลัก</strong>{' '}
                 เพื่อเข้าถึงโฟลเดอร์ส่วนตัว สมุดโน้ต และโฟลเดอร์ลิงก์งาน 17 แผ่นงาน
               </p>
+              {pendingFolderBanner && (
+                <div className="mt-3 p-2.5 rounded-xl bg-sky-500/15 border border-sky-400/35 text-xs font-semibold text-sky-200">
+                  {pendingFolderBanner}
+                </div>
+              )}
             </div>
 
             {/* ช่องแสดงรหัสพนักงานที่พิมพ์ */}
@@ -1118,6 +1127,10 @@ export const EmployeePortalModal: React.FC<EmployeePortalModalProps> = ({
                                     <div
                                       key={pFolder.id}
                                       onClick={() => {
+                                        if (onOpenFolderPage) {
+                                          onOpenFolderPage(pFolder.id);
+                                          return;
+                                        }
                                         setSelectedFolderId(pFolder.id);
                                         setInFolderSearch('');
                                         setSelectedTopicFilter('all');
@@ -1221,6 +1234,10 @@ export const EmployeePortalModal: React.FC<EmployeePortalModalProps> = ({
                                     <div
                                       key={folder.id}
                                       onClick={() => {
+                                        if (onOpenFolderPage) {
+                                          onOpenFolderPage(folder.id);
+                                          return;
+                                        }
                                         setSelectedFolderId(folder.id);
                                         setInFolderSearch('');
                                         setSelectedTopicFilter('all');

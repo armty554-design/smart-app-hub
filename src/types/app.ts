@@ -29,6 +29,8 @@ export interface AppLink {
   is_active?: boolean;
   sort_order: number;
   created_at?: string;
+  updated_at?: string;
+  updated_by?: string;
 }
 
 export interface AppSettings {
@@ -83,6 +85,9 @@ export interface EmployeeLinkItem {
   badge?: string;         // เช่น "CRM", "Power BI", "MDFSS V.2", "GAS", "Form", "Sheet"
   iconName: string;
   bgStyle: string;
+  updatedAt?: string;     // วัน-เวลาที่เปลี่ยนลิงก์หรืออัปเดตล่าสุด (ISO string)
+  updatedBy?: string;     // ชื่อหรือรหัสพนักงานที่เปลี่ยนลิงก์ล่าสุด
+  isCustomAdded?: boolean;
 }
 
 export interface EmployeeSheetFolder {

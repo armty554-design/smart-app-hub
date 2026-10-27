@@ -15,25 +15,96 @@ import {
 import { getSupabaseClient } from '../lib/supabase';
 
 const STORAGE_KEY_EMPLOYEE_FOLDERS = 'smart_hub_employee_folders_v1';
+const STORAGE_KEY_SHEET_OVERRIDES = 'smart_hub_sheet_link_overrides_v1';
 const STORAGE_KEY_PERSONAL_FOLDERS_PREFIX = 'smart_hub_emp_personal_folders_v1_';
 const STORAGE_KEY_FOLDER_NOTES = 'smart_hub_folder_notes_v1';
 
 const SUPABASE_NOTES_ROW_ID = 'hub_folder_notes_v1';
+const SUPABASE_SHEET_OVERRIDES_ROW_ID = 'hub_sheet_overrides_v1';
 const SUPABASE_EMP_WORKSPACE_PREFIX = 'emp_workspace_';
 
-export function getEmployeeFolders(): EmployeeSheetFolder[] {
+export interface SheetFolderOverridesStore {
+  updatedLinks: Record<string, Partial<EmployeeLinkItem>>; // key = link.id
+  addedLinksByFolder: Record<string, EmployeeLinkItem[]>;  // key = folder.id
+  deletedLinkIds: string[];
+}
+
+function getSheetFolderOverrides(): SheetFolderOverridesStore {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY_EMPLOYEE_FOLDERS);
+    const raw = localStorage.getItem(STORAGE_KEY_SHEET_OVERRIDES);
     if (raw) {
-      const parsed = JSON.parse(raw) as EmployeeSheetFolder[];
-      if (Array.isArray(parsed) && parsed.length >= 15) {
-        return parsed;
+      const parsed = JSON.parse(raw) as SheetFolderOverridesStore;
+      if (parsed && typeof parsed === 'object') {
+        return {
+          updatedLinks: parsed.updatedLinks || {},
+          addedLinksByFolder: parsed.addedLinksByFolder || {},
+          deletedLinkIds: Array.isArray(parsed.deletedLinkIds) ? parsed.deletedLinkIds : [],
+        };
       }
     }
   } catch {
-    // ignore storage errors
+    // ignore parse error
   }
-  return EMPLOYEE_SHEET_FOLDERS_FALLBACK;
+  return {
+    updatedLinks: {},
+    addedLinksByFolder: {},
+    deletedLinkIds: [],
+  };
+}
+
+async function persistSheetFolderOverrides(
+  store: SheetFolderOverridesStore
+): Promise<SheetFolderOverridesStore> {
+  try {
+    localStorage.setItem(STORAGE_KEY_SHEET_OVERRIDES, JSON.stringify(store));
+    // ล้างแคชตัวเก่าเพื่อให้ getEmployeeFolders() ผสานค่าล่าสุดเสมอ
+    localStorage.removeItem(STORAGE_KEY_EMPLOYEE_FOLDERS);
+  } catch {
+    // ignore storage error
+  }
+
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    try {
+      await supabase.from('app_settings').upsert({
+        id: SUPABASE_SHEET_OVERRIDES_ROW_ID,
+        hub_title: 'Smart Hub Sheet Link Overrides',
+        hub_subtitle: 'sheet_overrides_v1',
+        admin_pin: '0000',
+        wallpaper_id: 'aurora-night',
+        custom_wallpaper_url: JSON.stringify(store),
+        icon_shape: 'squircle',
+        grid_columns: 4,
+        updated_at: new Date().toISOString(),
+      });
+    } catch {
+      // ignore cloud sync error
+    }
+  }
+  return store;
+}
+
+export function getEmployeeFolders(): EmployeeSheetFolder[] {
+  const overrides = getSheetFolderOverrides();
+  const deletedSet = new Set(overrides.deletedLinkIds);
+
+  return EMPLOYEE_SHEET_FOLDERS_FALLBACK.map((folder) => {
+    const baseLinks = folder.links
+      .filter((link) => !deletedSet.has(link.id))
+      .map((link) => {
+        const patch = overrides.updatedLinks[link.id];
+        return patch ? { ...link, ...patch } : link;
+      });
+
+    const addedLinks = (overrides.addedLinksByFolder[folder.id] || []).filter(
+      (link) => !deletedSet.has(link.id)
+    );
+
+    return {
+      ...folder,
+      links: [...addedLinks, ...baseLinks],
+    };
+  });
 }
 
 export function getEmployeeScheduleItems(): EmployeeScheduleItem[] {
@@ -94,15 +165,112 @@ export function searchAcrossEmployeeFolders(
         link.description
       } ${link.badge || ''} ${link.url}`.toLowerCase();
       if (hay.includes(q)) {
-        results.push({ folder, link, isPersonalFolder: false });
+        results.push({ folder: mappedFolderWithRef(folder), link, isPersonalFolder: false });
       }
     }
   }
   return results;
 }
 
+function mappedFolderWithRef(folder: EmployeeSheetFolder): EmployeeSheetFolder {
+  return folder;
+}
+
 // ============================================================================
-// ระบบตรวจจับไอคอนและป้ายกำกับอัตโนมัติสำหรับลิงก์ส่วนตัวของพนักงาน
+// ระบบสร้างลิงก์เฉพาะของโฟลเดอร์ (Shareable Deep Link) และข้อความสำหรับก็อปส่งต่อ
+// ============================================================================
+export function buildFolderShareUrl(params: {
+  folderId?: string;
+  categoryId?: string;
+  employeeCode?: string;
+  baseUrl?: string;
+}): string {
+  const originAndPath =
+    params.baseUrl ||
+    (typeof window !== 'undefined'
+      ? `${window.location.origin}${window.location.pathname}`
+      : 'https://smart-app-hub.vercel.app/');
+
+  const searchParams = new URLSearchParams();
+  if (params.folderId) {
+    searchParams.set('folder', params.folderId);
+    if (params.employeeCode && params.folderId.startsWith('personal-')) {
+      searchParams.set('emp', params.employeeCode);
+    }
+  } else if (params.categoryId) {
+    searchParams.set('cat', params.categoryId);
+  }
+
+  const query = searchParams.toString();
+  return query ? `${originAndPath}?${query}` : originAndPath;
+}
+
+export function formatLinkUpdatedTime(isoDate?: string): string {
+  if (!isoDate) return '';
+  try {
+    const dt = new Date(isoDate);
+    if (Number.isNaN(dt.getTime())) return '';
+    return dt.toLocaleString('th-TH', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return '';
+  }
+}
+
+export function buildFolderShareText(params: {
+  folderName: string;
+  description?: string;
+  linkCount?: number;
+  shareUrl: string;
+}): string {
+  const lines = [
+    `📁 โฟลเดอร์: ${params.folderName}${
+      params.linkCount !== undefined ? ` (${params.linkCount} ลิงก์)` : ''
+    }`,
+  ];
+  if (params.description) {
+    lines.push(`📝 รายละเอียด: ${params.description}`);
+  }
+  lines.push(`🔗 เปิดหน้าโฟลเดอร์นี้โดยตรง: ${params.shareUrl}`);
+  return lines.join('\n');
+}
+
+export function buildLinkItemShareText(params: {
+  title: string;
+  url: string;
+  description?: string;
+  folderName?: string;
+  updatedAt?: string;
+  updatedBy?: string;
+}): string {
+  const lines = [`📌 ${params.title}`];
+  if (params.folderName) {
+    lines.push(`📁 โฟลเดอร์: ${params.folderName}`);
+  }
+  if (params.description) {
+    lines.push(`📝 คำอธิบาย: ${params.description}`);
+  }
+  if (params.updatedAt) {
+    const timeText = formatLinkUpdatedTime(params.updatedAt);
+    if (timeText) {
+      lines.push(
+        `🕒 เปลี่ยนลิงก์ล่าสุดเมื่อ: ${timeText} น.${
+          params.updatedBy ? ` (${params.updatedBy})` : ''
+        }`
+      );
+    }
+  }
+  lines.push(`🔗 ลิงก์เข้าใช้งาน: ${params.url}`);
+  return lines.join('\n');
+}
+
+// ============================================================================
+// ระบบตรวจจับไอคอนและป้ายกำกับอัตโนมัติสำหรับลิงก์พนักงาน
 // ============================================================================
 export function detectEmployeeLinkAppearance(rawUrl: string): {
   badge: string;
@@ -160,10 +328,145 @@ export function detectEmployeeLinkAppearance(rawUrl: string): {
     };
   }
   return {
-    badge: 'ลิงก์ส่วนตัว',
+    badge: 'ลิงก์งาน',
     iconName: 'Globe',
     bgStyle: 'linear-gradient(135deg, #ec4899 0%, #6366f1 100%)',
   };
+}
+
+// ============================================================================
+// การเพิ่ม/เปลี่ยนลิงก์เฉพาะในโฟลเดอร์แผ่นงาน 17 แผ่นงาน พร้อมบันทึกเวลาเปลี่ยนลิงก์ล่าสุด
+// ============================================================================
+export async function updateEmployeeSheetFolderLink(
+  folderId: string,
+  linkId: string,
+  updates: {
+    title?: string;
+    url?: string;
+    codeOrTopic?: string;
+    description?: string;
+    updatedBy?: string;
+  }
+): Promise<EmployeeSheetFolder[]> {
+  const store = getSheetFolderOverrides();
+  const now = new Date().toISOString();
+
+  let cleanUrl = updates.url !== undefined ? updates.url.trim() : undefined;
+  if (cleanUrl && !/^https?:\/\//i.test(cleanUrl)) {
+    cleanUrl = `https://${cleanUrl}`;
+  }
+
+  const detected = cleanUrl ? detectEmployeeLinkAppearance(cleanUrl) : null;
+
+  // ตรวจสอบว่าเป็นลิงก์ที่เพิ่มใหม่ในโฟลเดอร์นี้หรือไม่
+  const addedList = store.addedLinksByFolder[folderId] || [];
+  const addedIdx = addedList.findIndex((item) => item.id === linkId);
+
+  if (addedIdx >= 0) {
+    const existing = addedList[addedIdx];
+    const updatedItem: EmployeeLinkItem = {
+      ...existing,
+      title: updates.title !== undefined ? updates.title.trim() || existing.title : existing.title,
+      url: cleanUrl || existing.url,
+      codeOrTopic:
+        updates.codeOrTopic !== undefined
+          ? updates.codeOrTopic.trim() || existing.codeOrTopic
+          : existing.codeOrTopic,
+      description:
+        updates.description !== undefined
+          ? updates.description.trim() || existing.description
+          : existing.description,
+      badge: detected ? detected.badge : existing.badge,
+      iconName: detected ? detected.iconName : existing.iconName,
+      bgStyle: detected ? detected.bgStyle : existing.bgStyle,
+      updatedAt: now,
+      updatedBy: updates.updatedBy || existing.updatedBy || 'พนักงาน',
+    };
+    const nextAdded = [...addedList];
+    nextAdded[addedIdx] = updatedItem;
+    store.addedLinksByFolder[folderId] = nextAdded;
+  } else {
+    const prevPatch = store.updatedLinks[linkId] || {};
+    store.updatedLinks[linkId] = {
+      ...prevPatch,
+      ...(updates.title !== undefined ? { title: updates.title.trim() } : {}),
+      ...(cleanUrl ? { url: cleanUrl } : {}),
+      ...(updates.codeOrTopic !== undefined ? { codeOrTopic: updates.codeOrTopic.trim() } : {}),
+      ...(updates.description !== undefined ? { description: updates.description.trim() } : {}),
+      ...(detected
+        ? {
+            badge: detected.badge,
+            iconName: detected.iconName,
+            bgStyle: detected.bgStyle,
+          }
+        : {}),
+      updatedAt: now,
+      updatedBy: updates.updatedBy || 'พนักงาน',
+    };
+  }
+
+  await persistSheetFolderOverrides(store);
+  return getEmployeeFolders();
+}
+
+export async function addLinkToEmployeeSheetFolder(
+  folderId: string,
+  linkInput: {
+    title: string;
+    url: string;
+    codeOrTopic?: string;
+    description?: string;
+    updatedBy?: string;
+  }
+): Promise<EmployeeSheetFolder[]> {
+  const store = getSheetFolderOverrides();
+  const now = new Date().toISOString();
+
+  let cleanUrl = linkInput.url.trim();
+  if (cleanUrl && !/^https?:\/\//i.test(cleanUrl)) {
+    cleanUrl = `https://${cleanUrl}`;
+  }
+
+  const detected = detectEmployeeLinkAppearance(cleanUrl);
+
+  const newLink: EmployeeLinkItem = {
+    id: `custom-sheet-link-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    folderId,
+    codeOrTopic: (linkInput.codeOrTopic || 'ลิงก์เพิ่มเติม').trim(),
+    title: linkInput.title.trim() || cleanUrl,
+    url: cleanUrl,
+    description:
+      (linkInput.description || '').trim() || 'ลิงก์ที่เพิ่ม/อัปเดตเพิ่มเติมในโฟลเดอร์นี้',
+    badge: detected.badge,
+    iconName: detected.iconName,
+    bgStyle: detected.bgStyle,
+    updatedAt: now,
+    updatedBy: linkInput.updatedBy || 'พนักงาน',
+    isCustomAdded: true,
+  };
+
+  const currentAdded = store.addedLinksByFolder[folderId] || [];
+  store.addedLinksByFolder[folderId] = [newLink, ...currentAdded];
+
+  await persistSheetFolderOverrides(store);
+  return getEmployeeFolders();
+}
+
+export async function deleteLinkFromEmployeeSheetFolder(
+  folderId: string,
+  linkId: string
+): Promise<EmployeeSheetFolder[]> {
+  const store = getSheetFolderOverrides();
+  if (!store.deletedLinkIds.includes(linkId)) {
+    store.deletedLinkIds.push(linkId);
+  }
+  if (store.addedLinksByFolder[folderId]) {
+    store.addedLinksByFolder[folderId] = store.addedLinksByFolder[folderId].filter(
+      (item) => item.id !== linkId
+    );
+  }
+  await persistSheetFolderOverrides(store);
+  return getEmployeeFolders();
 }
 
 // ============================================================================
@@ -224,7 +527,6 @@ async function persistPersonalFoldersForEmployee(
     // ignore storage error
   }
 
-  // ซิงค์ขึ้น Supabase (เก็บในตาราง app_settings แถวเฉพาะรหัสพนักงาน เพื่อซิงค์ข้ามอุปกรณ์)
   const supabase = getSupabaseClient();
   if (supabase) {
     try {
@@ -330,6 +632,7 @@ export async function addLinkToPersonalFolder(
     badge?: string;
     iconName?: string;
     bgStyle?: string;
+    updatedBy?: string;
   }
 ): Promise<EmployeePersonalFolder[]> {
   const cleanCode = employeeCode.trim();
@@ -354,6 +657,8 @@ export async function addLinkToPersonalFolder(
     badge: linkInput.badge || detected.badge,
     iconName: linkInput.iconName || detected.iconName,
     bgStyle: linkInput.bgStyle || detected.bgStyle,
+    updatedAt: now,
+    updatedBy: linkInput.updatedBy || cleanCode,
   };
 
   const updated = current.map((folder) =>
@@ -393,6 +698,8 @@ export async function updateLinkInPersonalFolder(
           ...item,
           ...updates,
           url: nextUrl,
+          updatedAt: now,
+          updatedBy: updates.updatedBy || cleanCode,
         };
       }),
       updatedAt: now,
@@ -478,7 +785,6 @@ export function getFolderNotes(folderId: string, employeeCode?: string): FolderN
   return all
     .filter((note) => {
       if (note.folderId !== folderId) return false;
-      // แสดงโน้ตที่เป็นแบบแชร์ในโฟลเดอร์ หรือโน้ตส่วนตัวของรหัสพนักงานคนนั้น
       return Boolean(note.isShared) || note.employeeCode === cleanCode || cleanCode === 'admin';
     })
     .sort((a, b) => {
@@ -579,11 +885,12 @@ export async function togglePinFolderNote(
 }
 
 // ============================================================================
-// ส่วนที่ 3: ซิงค์ข้อมูลโฟลเดอร์ส่วนตัวและโน้ตจาก Supabase Cloud
+// ส่วนที่ 3: ซิงค์ข้อมูลโฟลเดอร์ส่วนตัว โน้ต และการแก้ไขลิงก์จาก Supabase Cloud
 // ============================================================================
 export async function syncEmployeeWorkspaceFromCloud(employeeCode?: string): Promise<{
   personalFolders: EmployeePersonalFolder[];
   notes: FolderNoteItem[];
+  employeeFolders: EmployeeSheetFolder[];
 }> {
   const cleanCode = (employeeCode || '').trim();
   const supabase = getSupabaseClient();
@@ -592,11 +899,12 @@ export async function syncEmployeeWorkspaceFromCloud(employeeCode?: string): Pro
     return {
       personalFolders: cleanCode ? getPersonalFoldersForEmployee(cleanCode) : [],
       notes: getAllFolderNotes(),
+      employeeFolders: getEmployeeFolders(),
     };
   }
 
   try {
-    const idsToFetch = [SUPABASE_NOTES_ROW_ID];
+    const idsToFetch = [SUPABASE_NOTES_ROW_ID, SUPABASE_SHEET_OVERRIDES_ROW_ID];
     if (cleanCode) {
       idsToFetch.push(`${SUPABASE_EMP_WORKSPACE_PREFIX}${cleanCode}`);
     }
@@ -613,6 +921,21 @@ export async function syncEmployeeWorkspaceFromCloud(employeeCode?: string): Pro
             const cloudNotes = JSON.parse(row.custom_wallpaper_url) as FolderNoteItem[];
             if (Array.isArray(cloudNotes)) {
               localStorage.setItem(STORAGE_KEY_FOLDER_NOTES, JSON.stringify(cloudNotes));
+            }
+          } catch {
+            // ignore invalid json
+          }
+        }
+        if (row.id === SUPABASE_SHEET_OVERRIDES_ROW_ID && row.custom_wallpaper_url) {
+          try {
+            const cloudOverrides = JSON.parse(
+              row.custom_wallpaper_url
+            ) as SheetFolderOverridesStore;
+            if (cloudOverrides && typeof cloudOverrides === 'object') {
+              localStorage.setItem(
+                STORAGE_KEY_SHEET_OVERRIDES,
+                JSON.stringify(cloudOverrides)
+              );
             }
           } catch {
             // ignore invalid json
@@ -646,5 +969,6 @@ export async function syncEmployeeWorkspaceFromCloud(employeeCode?: string): Pro
   return {
     personalFolders: cleanCode ? getPersonalFoldersForEmployee(cleanCode) : [],
     notes: getAllFolderNotes(),
+    employeeFolders: getEmployeeFolders(),
   };
 }

@@ -21,9 +21,14 @@ import {
   calculateWorkTenure,
 } from '../services/employeeService';
 import {
+  addLinkToEmployeeSheetFolder,
   addLinkToPersonalFolder,
+  buildFolderShareText,
+  buildFolderShareUrl,
+  buildLinkItemShareText,
   createPersonalFolder,
   deleteFolderNote,
+  formatLinkUpdatedTime,
   getEmployeeFolders,
   getEmployeeScheduleItems,
   getFolderNotes,
@@ -31,6 +36,7 @@ import {
   removeLinkFromPersonalFolder,
   searchAcrossEmployeeFolders,
   togglePinFolderNote,
+  updateEmployeeSheetFolderLink,
   upsertFolderNote,
 } from '../services/employeeLinksService';
 
@@ -308,5 +314,87 @@ describe('App Hub Launcher - Link & Icon Studio Service', () => {
       '171785'
     );
     expect(afterDeleteNote.length).toBe(1);
+  });
+
+  it('builds dedicated folder share URLs, tracks link update timestamps, and formats copy-to-share messages', async () => {
+    // 1. ทดสอบการสร้างลิงก์เฉพาะประจำโฟลเดอร์ (?folder=... และ ?cat=...)
+    const sheetShareUrl = buildFolderShareUrl({
+      folderId: 'sheet-link-69',
+      employeeCode: '171785',
+    });
+    expect(sheetShareUrl).toContain('folder=sheet-link-69');
+
+    const personalShareUrl = buildFolderShareUrl({
+      folderId: 'personal-171785-default',
+      employeeCode: '171785',
+    });
+    expect(personalShareUrl).toContain('folder=personal-171785-default');
+    expect(personalShareUrl).toContain('emp=171785');
+
+    const catShareUrl = buildFolderShareUrl({
+      categoryId: 'work-script',
+    });
+    expect(catShareUrl).toContain('cat=work-script');
+
+    // 2. ทดสอบการเปลี่ยนลิงก์ในโฟลเดอร์แผ่นงานพร้อมบันทึกเวลาเปลี่ยนลิงก์ล่าสุด (updatedAt & updatedBy)
+    const initialFolders = getEmployeeFolders();
+    const targetFolder = initialFolders.find((f) => f.sheetName === 'Link มาตรฐาน 69')!;
+    const targetFolderId = targetFolder.id;
+    const firstLink = targetFolder.links[0];
+
+    const updatedFolders = await updateEmployeeSheetFolderLink(
+      targetFolderId,
+      firstLink.id,
+      {
+        title: `${firstLink.title} (อัปเดตลิงก์ใหม่)`,
+        url: 'https://docs.google.com/spreadsheets/d/updated-link-2026/edit',
+        codeOrTopic: firstLink.codeOrTopic,
+        description: 'เปลี่ยนลิงก์ใหม่สำหรับไตรมาสล่าสุด',
+        updatedBy: 'หทัยวรรณ (171785)',
+      }
+    );
+
+    const modifiedLink = updatedFolders
+      .find((f) => f.id === targetFolderId)
+      ?.links.find((l) => l.id === firstLink.id);
+
+    expect(modifiedLink?.url).toBe('https://docs.google.com/spreadsheets/d/updated-link-2026/edit');
+    expect(modifiedLink?.updatedAt).toBeDefined();
+    expect(modifiedLink?.updatedBy).toBe('หทัยวรรณ (171785)');
+    expect(formatLinkUpdatedTime(modifiedLink?.updatedAt)).not.toBeNull();
+
+    // 3. ทดสอบการเพิ่มลิงก์ใหม่เข้าไปในโฟลเดอร์แผ่นงานและตรวจสอบข้อความก็อปส่งต่อ
+    const afterAddCustom = await addLinkToEmployeeSheetFolder(targetFolderId, {
+      title: 'ลิงก์เฉพาะกิจประจำเดือน',
+      url: 'https://script.google.com/macros/s/AKfycbx-special/exec',
+      codeOrTopic: 'KPI พิเศษ',
+      description: 'สำหรับส่งรายงานเฉพาะกิจ',
+      updatedBy: 'หทัยวรรณ (171785)',
+    });
+
+    const folderAfterAdd = afterAddCustom.find((f) => f.id === targetFolderId)!;
+    expect(folderAfterAdd.links[0].title).toBe('ลิงก์เฉพาะกิจประจำเดือน');
+    expect(folderAfterAdd.links[0].isCustomAdded).toBe(true);
+    expect(folderAfterAdd.links[0].updatedAt).toBeDefined();
+
+    const folderShareMsg = buildFolderShareText({
+      folderName: folderAfterAdd.sheetName,
+      description: folderAfterAdd.description,
+      shareUrl: sheetShareUrl,
+      linkCount: folderAfterAdd.links.length,
+    });
+    expect(folderShareMsg).toContain('Link มาตรฐาน 69');
+    expect(folderShareMsg).toContain('folder=sheet-link-69');
+
+    const linkShareMsg = buildLinkItemShareText({
+      folderName: folderAfterAdd.sheetName,
+      title: modifiedLink!.title,
+      url: modifiedLink!.url,
+      description: modifiedLink!.description,
+      updatedAt: modifiedLink!.updatedAt,
+      updatedBy: modifiedLink!.updatedBy,
+    });
+    expect(linkShareMsg).toContain('https://docs.google.com/spreadsheets/d/updated-link-2026/edit');
+    expect(linkShareMsg).toContain('เปลี่ยนลิงก์ล่าสุดเมื่อ');
   });
 });

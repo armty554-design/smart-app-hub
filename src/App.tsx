@@ -21,6 +21,7 @@ import {
   Category,
   EmployeePersonalFolder,
   EmployeeProfile,
+  EmployeeSheetFolder,
   FolderLayout,
 } from './types/app';
 import { DEFAULT_CATEGORIES, DEFAULT_SETTINGS, WALLPAPER_PRESETS } from './constants/wallpapers';
@@ -46,6 +47,7 @@ import {
   calculateWorkTenure,
 } from './services/employeeService';
 import {
+  buildFolderShareUrl,
   getEmployeeFolders,
   getFolderNotesCountMap,
   getPersonalFoldersForEmployee,
@@ -57,6 +59,7 @@ import { DockBar } from './components/DockBar';
 import { PinLockModal } from './components/PinLockModal';
 import { LinkFormModal } from './components/LinkFormModal';
 import { FolderModal } from './components/FolderModal';
+import { FolderPageView } from './components/FolderPageView';
 import { SpotlightModal } from './components/SpotlightModal';
 import { SettingsModal } from './components/SettingsModal';
 import { AdminDashboardModal } from './components/AdminDashboardModal';
@@ -133,7 +136,16 @@ export function App() {
   const [isSyncingEmployees, setIsSyncingEmployees] = useState(false);
   const [isLiveEmployeeSheet, setIsLiveEmployeeSheet] = useState(false);
 
-  const employeeFolders = getEmployeeFolders();
+  // Full-Page Folder Navigation & Deep-Link State (?folder=... / ?cat=...)
+  const [activePageFolder, setActivePageFolder] = useState<{
+    folderId?: string;
+    categoryId?: string;
+  } | null>(null);
+  const [pendingSharedFolderId, setPendingSharedFolderId] = useState<string | null>(null);
+
+  const [employeeFolders, setEmployeeFolders] = useState<EmployeeSheetFolder[]>(() =>
+    getEmployeeFolders()
+  );
   const [personalFolders, setPersonalFolders] = useState<EmployeePersonalFolder[]>(() =>
     currentEmployee ? getPersonalFoldersForEmployee(currentEmployee.code) : []
   );
@@ -143,10 +155,12 @@ export function App() {
 
   const refreshEmployeeWorkspaceState = useCallback(async (empCode?: string) => {
     const code = empCode ?? currentEmployee?.code;
+    setEmployeeFolders(getEmployeeFolders());
     if (code) {
       setPersonalFolders(getPersonalFoldersForEmployee(code));
       setNotesCountMap(getFolderNotesCountMap(code));
       const synced = await syncEmployeeWorkspaceFromCloud(code);
+      setEmployeeFolders(getEmployeeFolders());
       setPersonalFolders(synced.personalFolders);
       setNotesCountMap(getFolderNotesCountMap(code));
     } else {
@@ -158,6 +172,78 @@ export function App() {
   useEffect(() => {
     refreshEmployeeWorkspaceState(currentEmployee?.code);
   }, [currentEmployee?.code, refreshEmployeeWorkspaceState]);
+
+  // ระบบเปลี่ยนหน้าเข้าโฟลเดอร์เต็มจอ + เปลี่ยนลิงก์ URL เฉพาะ (?folder=... หรือ ?cat=...)
+  const navigateToFolderPage = useCallback(
+    (
+      target: { folderId?: string; categoryId?: string } | null,
+      options?: { replaceHistory?: boolean }
+    ) => {
+      setOpenedFolderCategory(null);
+      if (!target || (!target.folderId && !target.categoryId)) {
+        setActivePageFolder(null);
+        const cleanUrl = window.location.pathname;
+        if (options?.replaceHistory) {
+          window.history.replaceState({}, '', cleanUrl);
+        } else {
+          window.history.pushState({}, '', cleanUrl);
+        }
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
+      }
+
+      if (target.folderId && !currentEmployee) {
+        setPendingSharedFolderId(target.folderId);
+        setIsEmployeePortalOpen(true);
+        return;
+      }
+
+      setIsEmployeePortalOpen(false);
+      setSelectedEmployeeFolderId(null);
+      setActivePageFolder(target);
+
+      const shareUrl = buildFolderShareUrl({
+        folderId: target.folderId,
+        categoryId: target.categoryId,
+        employeeCode: currentEmployee?.code,
+      });
+      if (options?.replaceHistory) {
+        window.history.replaceState({}, '', shareUrl);
+      } else {
+        window.history.pushState({}, '', shareUrl);
+      }
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    },
+    [currentEmployee]
+  );
+
+  // ตรวจจับลิงก์เฉพาะโฟลเดอร์จาก URL (?folder=... หรือ ?cat=...) และปุ่มย้อนกลับของเบราว์เซอร์ (popstate)
+  useEffect(() => {
+    const syncRouteFromLocation = () => {
+      const params = new URLSearchParams(window.location.search);
+      const folderParam = params.get('folder');
+      const catParam = params.get('cat');
+
+      if (folderParam) {
+        if (currentEmployee) {
+          setActivePageFolder({ folderId: folderParam });
+          setPendingSharedFolderId(null);
+        } else {
+          setActivePageFolder(null);
+          setPendingSharedFolderId(folderParam);
+          setIsEmployeePortalOpen(true);
+        }
+      } else if (catParam) {
+        setActivePageFolder({ categoryId: catParam });
+      } else {
+        setActivePageFolder(null);
+      }
+    };
+
+    syncRouteFromLocation();
+    window.addEventListener('popstate', syncRouteFromLocation);
+    return () => window.removeEventListener('popstate', syncRouteFromLocation);
+  }, [currentEmployee]);
 
   // Clock for Mobile Status Bar
   const [now, setNow] = useState(new Date());
@@ -254,11 +340,26 @@ export function App() {
   const handleEmployeeLogin = (employee: EmployeeProfile) => {
     setCurrentEmployee(employee);
     saveLoggedInEmployee(employee);
+    if (pendingSharedFolderId) {
+      const targetId = pendingSharedFolderId;
+      setPendingSharedFolderId(null);
+      setIsEmployeePortalOpen(false);
+      setActivePageFolder({ folderId: targetId });
+      const shareUrl = buildFolderShareUrl({
+        folderId: targetId,
+        employeeCode: employee.code,
+      });
+      window.history.replaceState({}, '', shareUrl);
+    }
   };
 
   const handleEmployeeLogout = () => {
     setCurrentEmployee(null);
     saveLoggedInEmployee(null);
+    if (activePageFolder?.folderId) {
+      setActivePageFolder(null);
+      window.history.pushState({}, '', window.location.pathname);
+    }
   };
 
   useEffect(() => {
@@ -349,7 +450,14 @@ export function App() {
   };
 
   const handleSaveLink = async (linkPayload: AppLink) => {
-    const updated = await upsertAppLink(linkPayload, links);
+    const stampedPayload: AppLink = {
+      ...linkPayload,
+      updated_at: new Date().toISOString(),
+      updated_by: currentEmployee
+        ? `${currentEmployee.firstName} (${currentEmployee.code})`
+        : 'ผู้ดูแลระบบ (Admin)',
+    };
+    const updated = await upsertAppLink(stampedPayload, links);
     setLinks(updated);
   };
 
@@ -480,6 +588,24 @@ export function App() {
       : 'grid-cols-4 sm:grid-cols-4 lg:grid-cols-5';
 
   const activeCategoryObj = categories.find((c) => c.id === activeCategoryId) || null;
+
+  // ตรวจสอบว่ากำลังเปิดหน้าโฟลเดอร์แบบเต็มจอ (Full-Page Folder View) อยู่หรือไม่
+  const activeSheetFolderObj = activePageFolder?.folderId
+    ? employeeFolders.find((f) => f.id === activePageFolder.folderId) || null
+    : null;
+  const activePersonalFolderObj = activePageFolder?.folderId
+    ? personalFolders.find((f) => f.id === activePageFolder.folderId) || null
+    : null;
+  const activeCategoryPageObj = activePageFolder?.categoryId
+    ? categories.find((c) => c.id === activePageFolder.categoryId) || null
+    : null;
+  const isFolderPageOpen = Boolean(
+    activeSheetFolderObj || activePersonalFolderObj || activeCategoryPageObj
+  );
+  const pendingFolderBannerText = pendingSharedFolderId
+    ? employeeFolders.find((f) => f.id === pendingSharedFolderId)?.sheetName ||
+      'โฟลเดอร์ที่เพื่อนร่วมงานแชร์ลิงก์มาให้'
+    : null;
 
   const timeString = now.toLocaleTimeString('th-TH', {
     hour: '2-digit',
@@ -814,9 +940,12 @@ export function App() {
 
               <button
                 type="button"
-                onClick={() => setActiveCategoryId('all')}
+                onClick={() => {
+                  setActiveCategoryId('all');
+                  if (isFolderPageOpen) navigateToFolderPage(null);
+                }}
                 className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-xs font-medium transition ${
-                  activeCategoryId === 'all'
+                  activeCategoryId === 'all' && !isFolderPageOpen
                     ? isLightTheme
                       ? 'bg-sky-600 text-white font-semibold shadow-md shadow-sky-500/25'
                       : 'bg-indigo-600 text-white font-semibold shadow-lg shadow-indigo-600/30'
@@ -831,7 +960,7 @@ export function App() {
                 </span>
                 <span
                   className={`px-2 py-0.5 rounded-full text-[10px] ${
-                    activeCategoryId === 'all'
+                    activeCategoryId === 'all' && !isFolderPageOpen
                       ? 'bg-black/20 text-white'
                       : isLightTheme
                       ? 'bg-slate-200/80 text-slate-700'
@@ -844,12 +973,17 @@ export function App() {
 
               {categories.map((cat) => {
                 const count = visibleLinks.filter((l) => l.category_id === cat.id).length;
-                const isActive = activeCategoryId === cat.id;
+                const isActive =
+                  (activeCategoryId === cat.id && !isFolderPageOpen) ||
+                  activePageFolder?.categoryId === cat.id;
                 return (
                   <div key={cat.id} className="flex items-center gap-1">
                     <button
                       type="button"
-                      onClick={() => setActiveCategoryId(cat.id)}
+                      onClick={() => {
+                        setActiveCategoryId(cat.id);
+                        if (isFolderPageOpen) navigateToFolderPage(null);
+                      }}
                       className={`flex-1 flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-xs font-medium transition min-w-0 ${
                         isActive
                           ? isLightTheme
@@ -882,10 +1016,12 @@ export function App() {
 
                     <button
                       type="button"
-                      onClick={() => setOpenedFolderCategory(cat)}
-                      title={`เปิดหน้าต่างโฟลเดอร์ "${cat.name}" แบบขยาย`}
+                      onClick={() => navigateToFolderPage({ categoryId: cat.id })}
+                      title={`เปิดหน้าโฟลเดอร์ "${cat.name}" แบบเต็มจอพร้อมลิงก์เฉพาะ`}
                       className={`p-2.5 rounded-2xl border transition shrink-0 ${
-                        isLightTheme
+                        activePageFolder?.categoryId === cat.id
+                          ? 'bg-sky-600 border-sky-500 text-white shadow'
+                          : isLightTheme
                           ? 'bg-slate-100/80 hover:bg-sky-100 text-slate-600 hover:text-sky-800 border-slate-200'
                           : 'bg-white/5 hover:bg-indigo-500/30 text-slate-300 hover:text-white border-white/10'
                       }`}
@@ -981,6 +1117,39 @@ export function App() {
               พื้นที่แสดงผลหลัก (Mobile = Phone Home Screen | Desktop = Workspace Area)
              ===================================================================== */}
           <main className="lg:col-span-9 w-full">
+            {isFolderPageOpen ? (
+              <FolderPageView
+                mode={
+                  activeSheetFolderObj
+                    ? 'employee-sheet'
+                    : activePersonalFolderObj
+                    ? 'employee-personal'
+                    : 'category'
+                }
+                sheetFolder={activeSheetFolderObj}
+                personalFolder={activePersonalFolderObj}
+                category={activeCategoryPageObj}
+                categoryLinks={
+                  activeCategoryPageObj
+                    ? visibleLinks.filter((l) => l.category_id === activeCategoryPageObj.id)
+                    : []
+                }
+                allSheetFolders={employeeFolders}
+                allPersonalFolders={personalFolders}
+                allCategories={categories}
+                currentEmployee={currentEmployee}
+                isLightTheme={isLightTheme}
+                isEditMode={isEditMode}
+                iconShape={settings.icon_shape}
+                onBackToHome={() => navigateToFolderPage(null)}
+                onSwitchFolder={(target) => navigateToFolderPage(target)}
+                onRefreshWorkspace={() => refreshEmployeeWorkspaceState(currentEmployee?.code)}
+                onEditCategoryLink={(link) => openEditLinkModal(link)}
+                onDeleteCategoryLink={handleDeleteLink}
+                onAddCategoryLink={(catId) => openAddLinkModal(catId, false)}
+              />
+            ) : (
+              <>
             {/* ส่วนหัวสำหรับหน้าจอมือถือ (Mobile Header - แสดงเฉพาะจอโทรศัพท์/แท็บเล็ตแนวตั้ง) */}
             <div className="flex lg:hidden flex-col items-center text-center mb-5">
               <div
@@ -1351,10 +1520,7 @@ export function App() {
                   return (
                     <div
                       key={pFolder.id}
-                      onClick={() => {
-                        setSelectedEmployeeFolderId(pFolder.id);
-                        setIsEmployeePortalOpen(true);
-                      }}
+                      onClick={() => navigateToFolderPage({ folderId: pFolder.id })}
                       className={`group p-3.5 rounded-2xl border cursor-pointer transition-all hover:-translate-y-0.5 flex flex-col justify-between gap-2 ${
                         isLightTheme
                           ? 'bg-white hover:bg-pink-50/50 border-pink-200 hover:border-pink-400 shadow-sm'
@@ -1448,7 +1614,7 @@ export function App() {
                       isLightTheme ? 'text-slate-600' : 'text-slate-300'
                     }`}
                   >
-                    คลิกที่โฟลเดอร์แผ่นงานเพื่อดูลิงก์ คำอธิบาย จดโน้ตในโฟลเดอร์ หรือกดเก็บลิงก์เข้าโฟลเดอร์ส่วนตัว
+                    คลิกที่โฟลเดอร์แผ่นงานเพื่อเปลี่ยนหน้าเข้าสู่โฟลเดอร์ พร้อมลิงก์เฉพาะสำหรับก็อปส่งต่อและบันทึกเวลาเปลี่ยนลิงก์
                   </p>
                 </div>
 
@@ -1482,10 +1648,7 @@ export function App() {
                     return (
                       <div
                         key={folder.id}
-                        onClick={() => {
-                          setSelectedEmployeeFolderId(folder.id);
-                          setIsEmployeePortalOpen(true);
-                        }}
+                        onClick={() => navigateToFolderPage({ folderId: folder.id })}
                         className={`group p-3.5 rounded-2xl border cursor-pointer transition-all hover:-translate-y-0.5 flex flex-col justify-between gap-2 ${
                           isLightTheme
                             ? 'bg-sky-50/70 hover:bg-white border-sky-200/90 hover:border-sky-400 shadow-sm'
@@ -1622,7 +1785,7 @@ export function App() {
                   <button
                     type="button"
                     onClick={() => setActiveCategoryId(cat.id)}
-                    onDoubleClick={() => setOpenedFolderCategory(cat)}
+                    onDoubleClick={() => navigateToFolderPage({ categoryId: cat.id })}
                     className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition backdrop-blur-md ${
                       isActive
                         ? isLightTheme
@@ -1654,8 +1817,8 @@ export function App() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setOpenedFolderCategory(cat)}
-                    title={`เปิดป๊อปอัปโฟลเดอร์ "${cat.name}"`}
+                    onClick={() => navigateToFolderPage({ categoryId: cat.id })}
+                    title={`เปิดหน้าโฟลเดอร์ "${cat.name}"`}
                     className={`p-1.5 rounded-full border transition ${
                       isLightTheme
                         ? 'bg-white/80 hover:bg-sky-100 text-slate-600 hover:text-sky-800 border-sky-200'
@@ -1688,7 +1851,7 @@ export function App() {
               return (
                 <div
                   key={cat.id}
-                  onClick={() => setOpenedFolderCategory(cat)}
+                  onClick={() => navigateToFolderPage({ categoryId: cat.id })}
                   className={`group cursor-pointer rounded-[32px] backdrop-blur-2xl border p-4 shadow-xl transition-transform hover:scale-[1.02] active:scale-98 flex flex-col items-center ${
                     isLightTheme
                       ? 'bg-white/80 hover:bg-white border-sky-200/90 shadow-sky-900/5'
@@ -1960,6 +2123,8 @@ export function App() {
             />
           </DndContext>
         )}
+              </>
+            )}
           </main>
         </div>
       </div>
@@ -2029,13 +2194,16 @@ export function App() {
         isSyncingSheet={isSyncingEmployees}
         isLiveSheet={isLiveEmployeeSheet}
         initialFolderId={selectedEmployeeFolderId}
+        pendingFolderBanner={pendingFolderBannerText}
         onLoginSuccess={handleEmployeeLogin}
         onLogout={handleEmployeeLogout}
         onRefreshSheet={handleRefreshEmployees}
         onWorkspaceChanged={() => refreshEmployeeWorkspaceState(currentEmployee?.code)}
+        onOpenFolderPage={(folderId) => navigateToFolderPage({ folderId })}
         onClose={() => {
           setIsEmployeePortalOpen(false);
           setSelectedEmployeeFolderId(null);
+          setPendingSharedFolderId(null);
           refreshEmployeeWorkspaceState(currentEmployee?.code);
         }}
       />
