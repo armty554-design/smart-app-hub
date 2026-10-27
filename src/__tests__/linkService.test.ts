@@ -20,6 +20,11 @@ import {
   parseEmployeesFromCsv,
   calculateWorkTenure,
 } from '../services/employeeService';
+import {
+  getEmployeeFolders,
+  getEmployeeScheduleItems,
+  searchAcrossEmployeeFolders,
+} from '../services/employeeLinksService';
 
 describe('App Hub Launcher - Link & Icon Studio Service', () => {
   beforeEach(() => {
@@ -188,5 +193,29 @@ describe('App Hub Launcher - Link & Icon Studio Service', () => {
     expect(parsed[0].code).toBe('999888');
     expect(parsed[0].fullName).toBe('นายทดสอบ ระบบ');
     expect(calculateWorkTenure('01/05/2020')).toContain('ปี');
+  });
+
+  it('organizes employee-only links into 17 worksheet folders with descriptions from รวม Link DARUNEE', () => {
+    const folders = getEmployeeFolders();
+    expect(folders.length).toBe(17);
+
+    const std69 = folders.find((f) => f.sheetName === 'Link มาตรฐาน 69');
+    expect(std69).toBeDefined();
+    expect(std69?.links.length).toBeGreaterThanOrEqual(55);
+    expect(std69?.links.every((l) => Boolean(l.title && l.url && l.description))).toBe(true);
+
+    const appScriptFolder = folders.find((f) => f.sheetName === 'AppScript');
+    expect(appScriptFolder).toBeDefined();
+    expect(appScriptFolder?.links.length).toBe(7);
+
+    const powerBiFolder = folders.find((f) => f.sheetName === 'List power BI');
+    expect(powerBiFolder).toBeDefined();
+    expect(powerBiFolder?.links.length).toBeGreaterThanOrEqual(45);
+
+    const schedule = getEmployeeScheduleItems();
+    expect(schedule.length).toBeGreaterThanOrEqual(15);
+
+    const searchRes = searchAcrossEmployeeFolders('จัดส่งตรงเวลา', folders);
+    expect(searchRes.length).toBeGreaterThan(0);
   });
 });

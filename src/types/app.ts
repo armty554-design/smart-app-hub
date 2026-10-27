@@ -71,3 +71,34 @@ export interface EmployeeProfile {
   position: string; // ตำแหน่ง
   startDate: string; // วันที่เริ่มงาน (DD/MM/YYYY)
 }
+
+export interface EmployeeLinkItem {
+  id: string;
+  folderId: string;
+  codeOrTopic: string;    // เช่น "ข้อ 1.1", "AD", "HR", "การบริหารจัดการ Job"
+  subTopic?: string;      // เช่น "จัดส่งตรงเวลา"
+  title: string;          // ชื่อลิงก์
+  url: string;            // URL เป้าหมาย
+  description: string;    // คำอธิบาย / แหล่งที่มา / กำหนดการลงข้อมูล
+  badge?: string;         // เช่น "CRM", "Power BI", "MDFSS V.2", "GAS", "Form", "Sheet"
+  iconName: string;
+  bgStyle: string;
+}
+
+export interface EmployeeSheetFolder {
+  id: string;
+  sheetName: string;      // ชื่อแผ่นงานจริงใน Google Sheets
+  gid: string;            // gid ของแผ่นงาน
+  description: string;    // คำอธิบายโฟลเดอร์
+  color: string;
+  iconName: string;
+  isArchive?: boolean;    // สำหรับแผ่นงานปีย้อนหลัง 64-68
+  links: EmployeeLinkItem[];
+}
+
+export interface EmployeeScheduleItem {
+  seq: string;
+  title: string;
+  frequency: 'ประจำวัน' | 'ประจำเดือน' | string;
+  actionNote: string;
+}
