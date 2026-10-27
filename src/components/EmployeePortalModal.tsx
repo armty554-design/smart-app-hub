@@ -20,6 +20,7 @@ import {
   getEmployeeScheduleItems,
   getFolderNotesCountMap,
   getPersonalFoldersForEmployee,
+  movePersonalFolderOrder,
   removeLinkFromPersonalFolder,
   searchAcrossEmployeeFolders,
   syncEmployeeWorkspaceFromCloud,
@@ -53,7 +54,6 @@ import {
   FolderPlus,
   Search,
   ArrowLeft,
-  CalendarClock,
   FileSpreadsheet,
   History,
   Layers,
@@ -64,10 +64,14 @@ import {
   BookmarkPlus,
   StickyNote,
   Lock,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 
 interface EmployeePortalModalProps {
   isOpen: boolean;
+  pageMode?: boolean;
+  isLightTheme?: boolean;
   currentEmployee: EmployeeProfile | null;
   employees: EmployeeProfile[];
   links: AppLink[];
@@ -97,6 +101,8 @@ const PERSONAL_FOLDER_COLOR_PRESETS = [
 
 export const EmployeePortalModal: React.FC<EmployeePortalModalProps> = ({
   isOpen,
+  pageMode = false,
+  isLightTheme = false,
   currentEmployee,
   employees,
   iconShape,
@@ -119,10 +125,13 @@ export const EmployeePortalModal: React.FC<EmployeePortalModalProps> = ({
 
   const [activePortalTab, setActivePortalTab] = useState<
     'folders' | 'schedule' | 'card' | 'branch-team'
-  >('folders');
+  >('card');
 
-  // State สำหรับโฟลเดอร์ลิงก์พนักงาน (17 แผ่นงาน)
-  const employeeFolders = useMemo(() => getEmployeeFolders(), []);
+  // State สำหรับโฟลเดอร์ลิงก์พนักงาน (กรองแผ่นงานที่มีลิงก์จริง ไม่รวม ชีต5 ที่ไม่มีลิงก์)
+  const employeeFolders = useMemo(
+    () => getEmployeeFolders().filter((f) => f.id !== 'folder-sheet5' && f.links.length > 0),
+    []
+  );
   const scheduleItems = useMemo(() => getEmployeeScheduleItems(), []);
 
   // State สำหรับโฟลเดอร์ส่วนตัวของพนักงานแต่ละคน + จำนวนโน้ตในแต่ละโฟลเดอร์
@@ -189,11 +198,19 @@ export const EmployeePortalModal: React.FC<EmployeePortalModalProps> = ({
         setFolderDescInput('');
         setFolderColorInput('#ec4899');
         setIsFolderFormOpen(true);
+      } else if (initialFolderId === '__all_folders__') {
+        setActivePortalTab('folders');
+        setSelectedFolderId(null);
+      } else if (initialFolderId === '__user_profile__') {
+        setActivePortalTab('card');
+        setSelectedFolderId(null);
       } else if (initialFolderId) {
         setActivePortalTab('folders');
         setSelectedFolderId(initialFolderId);
         setInFolderSearch('');
         setSelectedTopicFilter('all');
+      } else {
+        setActivePortalTab('card');
       }
     }
   }, [isOpen, currentEmployee?.code, initialFolderId, refreshPersonalWorkspace]);
@@ -338,6 +355,18 @@ export const EmployeePortalModal: React.FC<EmployeePortalModalProps> = ({
       setSelectedFolderId(null);
     }
     showTempBanner(`ลบโฟลเดอร์ส่วนตัว "${folder.name}" เรียบร้อยแล้ว`);
+    onWorkspaceChanged?.();
+  };
+
+  const handleMovePersonalFolder = async (
+    folderId: string,
+    direction: 'left' | 'right',
+    e?: React.MouseEvent
+  ) => {
+    e?.stopPropagation();
+    if (!currentEmployee) return;
+    const updated = await movePersonalFolderOrder(currentEmployee.code, folderId, direction);
+    setPersonalFolders(updated);
     onWorkspaceChanged?.();
   };
 
@@ -520,20 +549,76 @@ export const EmployeePortalModal: React.FC<EmployeePortalModalProps> = ({
   return (
     <div
       onClick={() => {
-        if (!requireLogin || currentEmployee) onClose();
+        if (!pageMode && (!requireLogin || currentEmployee)) onClose();
       }}
-      className="fixed inset-0 z-[65] flex items-center justify-center p-2.5 sm:p-5 bg-slate-950/80 backdrop-blur-2xl overflow-y-auto animate-fade-in"
+      className={
+        pageMode
+          ? 'w-full space-y-4 animate-fade-in'
+          : 'fixed inset-0 z-[65] flex items-center justify-center p-2.5 sm:p-5 bg-slate-950/80 backdrop-blur-2xl overflow-y-auto animate-fade-in'
+      }
     >
+      {/* แถบนำทางด้านบนเมื่อเปิดแบบหน้าเต็ม (เปลี่ยนหน้าแทนป๊อปอัพ) */}
+      {pageMode && (
+        <div
+          className={`flex flex-wrap items-center justify-between gap-3 p-3.5 sm:p-4 rounded-3xl backdrop-blur-2xl border shadow-lg ${
+            isLightTheme
+              ? 'bg-white/90 border-sky-200 text-slate-900'
+              : 'bg-slate-950/75 border-white/15 text-white'
+          }`}
+        >
+          <div className="flex items-center gap-2.5">
+            <button
+              type="button"
+              onClick={onClose}
+              className={`px-3.5 py-2 rounded-2xl border text-xs sm:text-sm font-bold flex items-center gap-2 transition shadow-sm ${
+                isLightTheme
+                  ? 'bg-sky-600 hover:bg-sky-500 border-sky-600 text-white'
+                  : 'bg-white/15 hover:bg-sky-600 border-white/20 text-white'
+              }`}
+            >
+              <ArrowLeft size={16} />
+              <span>กลับหน้าโฮมหลัก</span>
+            </button>
+            <span
+              className={`text-xs sm:text-sm font-bold ${
+                isLightTheme ? 'text-slate-800' : 'text-slate-200'
+              }`}
+            >
+              {currentEmployee
+                ? `หน้าข้อมูลพนักงาน & พื้นที่ส่วนตัวของ ${currentEmployee.fullName}`
+                : 'หน้าเข้าสู่ระบบสำหรับพนักงาน'}
+            </span>
+          </div>
+
+          {currentEmployee && (
+            <button
+              type="button"
+              onClick={onLogout}
+              className="px-3.5 py-2 rounded-2xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-xs font-bold text-rose-500 dark:text-rose-300 flex items-center gap-1.5 transition"
+            >
+              <LogOut size={14} />
+              <span>สลับรหัสพนักงาน / ออกจากระบบ</span>
+            </button>
+          )}
+        </div>
+      )}
+
       <div
         onClick={(e) => e.stopPropagation()}
         className={`relative w-full ${
-          currentEmployee ? 'max-w-5xl' : 'max-w-md'
-        } rounded-3xl bg-slate-900 border border-white/15 shadow-[0_25px_80px_rgba(0,0,0,0.85)] overflow-hidden my-auto max-h-[93vh] flex flex-col ${
+          pageMode
+            ? currentEmployee
+              ? 'w-full'
+              : 'max-w-lg mx-auto'
+            : currentEmployee
+            ? 'max-w-5xl my-auto max-h-[93vh]'
+            : 'max-w-md my-auto max-h-[93vh]'
+        } rounded-3xl bg-slate-900 border border-white/15 shadow-[0_25px_80px_rgba(0,0,0,0.85)] overflow-hidden flex flex-col ${
           errorShake ? 'animate-shake' : ''
         }`}
       >
-        {/* ปุ่มปิดหน้าต่าง */}
-        {(!requireLogin || currentEmployee) && (
+        {/* ปุ่มปิดหน้าต่าง (แสดงเฉพาะโหมดป๊อปอัพ) */}
+        {!pageMode && (!requireLogin || currentEmployee) && (
           <button
             type="button"
             onClick={onClose}
@@ -721,6 +806,22 @@ export const EmployeePortalModal: React.FC<EmployeePortalModalProps> = ({
               <div className="flex items-center gap-2 mt-4 overflow-x-auto no-scrollbar">
                 <button
                   type="button"
+                  onClick={() => setActivePortalTab('card')}
+                  className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition flex items-center gap-1.5 ${
+                    activePortalTab === 'card'
+                      ? 'bg-white text-slate-900 shadow-md'
+                      : 'bg-white/10 hover:bg-white/20 text-white/90'
+                  }`}
+                >
+                  <UserCheck
+                    size={14}
+                    className={activePortalTab === 'card' ? 'text-sky-600' : 'text-sky-300'}
+                  />
+                  <span>บัตรข้อมูลพนักงาน</span>
+                </button>
+
+                <button
+                  type="button"
                   onClick={() => {
                     setActivePortalTab('folders');
                   }}
@@ -735,34 +836,8 @@ export const EmployeePortalModal: React.FC<EmployeePortalModalProps> = ({
                     className={activePortalTab === 'folders' ? 'text-sky-600' : 'text-sky-300'}
                   />
                   <span>
-                    โฟลเดอร์ส่วนตัว ({personalFolders.length}) & แผ่นงาน ({employeeFolders.length})
+                    จัดการโฟลเดอร์ส่วนตัว ({personalFolders.length}) & แผ่นงาน ({employeeFolders.length})
                   </span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setActivePortalTab('schedule')}
-                  className={`px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition flex items-center gap-1.5 ${
-                    activePortalTab === 'schedule'
-                      ? 'bg-white text-slate-900 shadow-md'
-                      : 'bg-white/10 hover:bg-white/20 text-white/85'
-                  }`}
-                >
-                  <CalendarClock size={14} />
-                  <span>ตารางกำหนดการดึงข้อมูล (ชีต5)</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setActivePortalTab('card')}
-                  className={`px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition flex items-center gap-1.5 ${
-                    activePortalTab === 'card'
-                      ? 'bg-white text-slate-900 shadow-md'
-                      : 'bg-white/10 hover:bg-white/20 text-white/85'
-                  }`}
-                >
-                  <UserCheck size={14} />
-                  <span>บัตรข้อมูลพนักงาน</span>
                 </button>
 
                 <button
@@ -1121,7 +1196,7 @@ export const EmployeePortalModal: React.FC<EmployeePortalModalProps> = ({
                               </div>
 
                               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                                {personalFolders.map((pFolder) => {
+                                {personalFolders.map((pFolder, pIdx) => {
                                   const noteCount = notesCountMap[pFolder.id] || 0;
                                   return (
                                     <div
@@ -1166,6 +1241,32 @@ export const EmployeePortalModal: React.FC<EmployeePortalModalProps> = ({
                                           </div>
 
                                           <div className="flex items-center gap-1 shrink-0">
+                                            {personalFolders.length > 1 && (
+                                              <>
+                                                <button
+                                                  type="button"
+                                                  disabled={pIdx === 0}
+                                                  onClick={(e) =>
+                                                    handleMovePersonalFolder(pFolder.id, 'left', e)
+                                                  }
+                                                  className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 disabled:opacity-30 text-slate-300 hover:text-white transition"
+                                                  title="เลื่อนโฟลเดอร์ไปทางซ้าย"
+                                                >
+                                                  <ChevronLeft size={12} />
+                                                </button>
+                                                <button
+                                                  type="button"
+                                                  disabled={pIdx === personalFolders.length - 1}
+                                                  onClick={(e) =>
+                                                    handleMovePersonalFolder(pFolder.id, 'right', e)
+                                                  }
+                                                  className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 disabled:opacity-30 text-slate-300 hover:text-white transition"
+                                                  title="เลื่อนโฟลเดอร์ไปทางขวา"
+                                                >
+                                                  <ChevronRight size={12} />
+                                                </button>
+                                              </>
+                                            )}
                                             <button
                                               type="button"
                                               onClick={(e) =>

@@ -621,6 +621,91 @@ export async function deletePersonalFolder(
   return persistPersonalFoldersForEmployee(cleanCode, next);
 }
 
+export async function movePersonalFolderOrder(
+  employeeCode: string,
+  folderId: string,
+  direction: 'left' | 'right'
+): Promise<EmployeePersonalFolder[]> {
+  const cleanCode = employeeCode.trim();
+  const current = getPersonalFoldersForEmployee(cleanCode);
+  const index = current.findIndex((f) => f.id === folderId);
+  if (index === -1) return current;
+  const targetIndex = direction === 'left' ? index - 1 : index + 1;
+  if (targetIndex < 0 || targetIndex >= current.length) return current;
+
+  const next = [...current];
+  const [moved] = next.splice(index, 1);
+  next.splice(targetIndex, 0, moved);
+  return persistPersonalFoldersForEmployee(cleanCode, next);
+}
+
+// ============================================================================
+// การตั้งค่ารูปแบบการแสดงผลและการจัดเรียงโฟลเดอร์บนคอมพิวเตอร์ (แยกตามพนักงาน)
+// ============================================================================
+export type FolderDisplayStyle = 'bookmark-bar' | 'desktop-icons' | 'cards';
+
+export interface EmployeeFolderLayoutPrefs {
+  displayStyle: FolderDisplayStyle;
+  gridCols: 2 | 3 | 4 | 6;
+  showBookmarkBarOnHome: boolean;
+  pinnedSheetFolderIds: string[];
+  sheetFolderOrderIds: string[];
+  hiddenSheetFolderIds: string[];
+}
+
+const STORAGE_KEY_FOLDER_LAYOUT_PREFS_PREFIX = 'smart_hub_folder_layout_prefs_v1_';
+
+export function getEmployeeFolderLayoutPrefs(employeeCode?: string): EmployeeFolderLayoutPrefs {
+  const key = `${STORAGE_KEY_FOLDER_LAYOUT_PREFS_PREFIX}${(employeeCode || 'guest').trim()}`;
+  const defaultPrefs: EmployeeFolderLayoutPrefs = {
+    displayStyle: 'cards',
+    gridCols: 3,
+    showBookmarkBarOnHome: true,
+    pinnedSheetFolderIds: ['folder-std-69', 'folder-daily'],
+    sheetFolderOrderIds: [],
+    hiddenSheetFolderIds: ['folder-sheet5'], // ซ่อน "ชีต5" (0 ลิงก์) เป็นค่าเริ่มต้นเพื่อไม่ให้สับสน
+  };
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<EmployeeFolderLayoutPrefs>;
+      return {
+        displayStyle: parsed.displayStyle || defaultPrefs.displayStyle,
+        gridCols: parsed.gridCols || defaultPrefs.gridCols,
+        showBookmarkBarOnHome:
+          parsed.showBookmarkBarOnHome !== undefined
+            ? parsed.showBookmarkBarOnHome
+            : defaultPrefs.showBookmarkBarOnHome,
+        pinnedSheetFolderIds: Array.isArray(parsed.pinnedSheetFolderIds)
+          ? parsed.pinnedSheetFolderIds
+          : defaultPrefs.pinnedSheetFolderIds,
+        sheetFolderOrderIds: Array.isArray(parsed.sheetFolderOrderIds)
+          ? parsed.sheetFolderOrderIds
+          : defaultPrefs.sheetFolderOrderIds,
+        hiddenSheetFolderIds: Array.isArray(parsed.hiddenSheetFolderIds)
+          ? parsed.hiddenSheetFolderIds
+          : defaultPrefs.hiddenSheetFolderIds,
+      };
+    }
+  } catch {
+    // ignore parse error
+  }
+  return defaultPrefs;
+}
+
+export function saveEmployeeFolderLayoutPrefs(
+  employeeCode: string | undefined,
+  prefs: EmployeeFolderLayoutPrefs
+): EmployeeFolderLayoutPrefs {
+  const key = `${STORAGE_KEY_FOLDER_LAYOUT_PREFS_PREFIX}${(employeeCode || 'guest').trim()}`;
+  try {
+    localStorage.setItem(key, JSON.stringify(prefs));
+  } catch {
+    // ignore storage error
+  }
+  return prefs;
+}
+
 export async function addLinkToPersonalFolder(
   employeeCode: string,
   folderId: string,

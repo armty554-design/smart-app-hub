@@ -48,10 +48,18 @@ import {
 } from './services/employeeService';
 import {
   buildFolderShareUrl,
+  createPersonalFolder,
+  deletePersonalFolder,
+  EmployeeFolderLayoutPrefs,
+  FolderDisplayStyle,
+  getEmployeeFolderLayoutPrefs,
   getEmployeeFolders,
   getFolderNotesCountMap,
   getPersonalFoldersForEmployee,
+  movePersonalFolderOrder,
+  saveEmployeeFolderLayoutPrefs,
   syncEmployeeWorkspaceFromCloud,
+  updatePersonalFolder,
 } from './services/employeeLinksService';
 import { AppIconCard } from './components/AppIconCard';
 import { getSupabaseClient } from './lib/supabase';
@@ -96,7 +104,21 @@ import {
   History,
   Star,
   StickyNote,
+  ChevronLeft,
+  ChevronRight,
+  X,
+  SlidersHorizontal,
 } from 'lucide-react';
+
+const HOME_PERSONAL_FOLDER_COLORS = [
+  '#ec4899',
+  '#0ea5e9',
+  '#6366f1',
+  '#10b981',
+  '#f59e0b',
+  '#8b5cf6',
+  '#f43f5e',
+];
 
 export function App() {
   const [links, setLinks] = useState<AppLink[]>([]);
@@ -153,9 +175,126 @@ export function App() {
     getFolderNotesCountMap(currentEmployee?.code || 'public')
   );
 
+  // การตั้งค่ารูปแบบการแสดงผลโฟลเดอร์บนคอมพิวเตอร์ (Bookmark Bar / Desktop Icons / Cards)
+  const [folderLayoutPrefs, setFolderLayoutPrefs] = useState<EmployeeFolderLayoutPrefs>(() =>
+    getEmployeeFolderLayoutPrefs(currentEmployee?.code)
+  );
+  const [isFolderCustomizeOpen, setIsFolderCustomizeOpen] = useState(false);
+
+  // ฟอร์มสร้าง/แก้ไขโฟลเดอร์ส่วนตัวแบบ Inline บนหน้าโฮมโดยตรง (ไม่ต้องเปิดป๊อปอัพ)
+  const [isInlinePersonalFormOpen, setIsInlinePersonalFormOpen] = useState(false);
+  const [editingInlineFolderId, setEditingInlineFolderId] = useState<string | null>(null);
+  const [inlineFolderName, setInlineFolderName] = useState('');
+  const [inlineFolderDesc, setInlineFolderDesc] = useState('');
+  const [inlineFolderColor, setInlineFolderColor] = useState('#ec4899');
+
+  const updateFolderLayoutPrefs = (patch: Partial<EmployeeFolderLayoutPrefs>) => {
+    setFolderLayoutPrefs((prev) => {
+      const next = { ...prev, ...patch };
+      saveEmployeeFolderLayoutPrefs(currentEmployee?.code, next);
+      return next;
+    });
+  };
+
+  const togglePinSheetFolder = (folderId: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    const currentPinned = folderLayoutPrefs.pinnedSheetFolderIds;
+    const isPinned = currentPinned.includes(folderId);
+    const nextPinned = isPinned
+      ? currentPinned.filter((id) => id !== folderId)
+      : [...currentPinned, folderId];
+    updateFolderLayoutPrefs({ pinnedSheetFolderIds: nextPinned });
+  };
+
+  const handleOpenInlineCreatePersonalFolder = () => {
+    setEditingInlineFolderId(null);
+    setInlineFolderName('');
+    setInlineFolderDesc('');
+    setInlineFolderColor('#ec4899');
+    setIsInlinePersonalFormOpen(true);
+  };
+
+  const handleOpenInlineEditPersonalFolder = (
+    folder: EmployeePersonalFolder,
+    e?: React.MouseEvent
+  ) => {
+    e?.stopPropagation();
+    setEditingInlineFolderId(folder.id);
+    setInlineFolderName(folder.name);
+    setInlineFolderDesc(folder.description);
+    setInlineFolderColor(folder.color || '#ec4899');
+    setIsInlinePersonalFormOpen(true);
+  };
+
+  const handleSaveInlinePersonalFolder = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentEmployee || !inlineFolderName.trim()) return;
+    if (editingInlineFolderId) {
+      const updated = await updatePersonalFolder(currentEmployee.code, editingInlineFolderId, {
+        name: inlineFolderName,
+        description: inlineFolderDesc,
+        color: inlineFolderColor,
+      });
+      setPersonalFolders(updated);
+    } else {
+      const updated = await createPersonalFolder(currentEmployee.code, {
+        name: inlineFolderName,
+        description: inlineFolderDesc,
+        color: inlineFolderColor,
+      });
+      setPersonalFolders(updated);
+    }
+    setIsInlinePersonalFormOpen(false);
+    setEditingInlineFolderId(null);
+  };
+
+  const handleDeleteInlinePersonalFolder = async (
+    folder: EmployeePersonalFolder,
+    e?: React.MouseEvent
+  ) => {
+    e?.stopPropagation();
+    if (!currentEmployee) return;
+    if (!window.confirm(`ต้องการลบโฟลเดอร์ส่วนตัว "${folder.name}" ของคุณใช่หรือไม่?`)) {
+      return;
+    }
+    const updated = await deletePersonalFolder(currentEmployee.code, folder.id);
+    setPersonalFolders(updated);
+  };
+
+  const handleMoveInlinePersonalFolder = async (
+    folderId: string,
+    direction: 'left' | 'right',
+    e?: React.MouseEvent
+  ) => {
+    e?.stopPropagation();
+    if (!currentEmployee) return;
+    const updated = await movePersonalFolderOrder(currentEmployee.code, folderId, direction);
+    setPersonalFolders(updated);
+  };
+
+  // เปิดหน้าข้อมูลของ User แบบเปลี่ยนหน้าเต็มจอ (แทนป๊อปอัพ)
+  const openUserPage = useCallback((initialTarget: string | null = '__user_profile__') => {
+    setOpenedFolderCategory(null);
+    setActivePageFolder(null);
+    setSelectedEmployeeFolderId(initialTarget);
+    setIsEmployeePortalOpen(true);
+    const cleanUrl = `${window.location.pathname}?page=user`;
+    window.history.pushState({}, '', cleanUrl);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
+
+  const closeUserPage = useCallback(() => {
+    setIsEmployeePortalOpen(false);
+    setSelectedEmployeeFolderId(null);
+    setPendingSharedFolderId(null);
+    window.history.pushState({}, '', window.location.pathname);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
+
   const refreshEmployeeWorkspaceState = useCallback(async (empCode?: string) => {
     const code = empCode ?? currentEmployee?.code;
     setEmployeeFolders(getEmployeeFolders());
+    setFolderLayoutPrefs(getEmployeeFolderLayoutPrefs(code));
     if (code) {
       setPersonalFolders(getPersonalFoldersForEmployee(code));
       setNotesCountMap(getFolderNotesCountMap(code));
@@ -182,6 +321,7 @@ export function App() {
       setOpenedFolderCategory(null);
       if (!target || (!target.folderId && !target.categoryId)) {
         setActivePageFolder(null);
+        setIsEmployeePortalOpen(false);
         const cleanUrl = window.location.pathname;
         if (options?.replaceHistory) {
           window.history.replaceState({}, '', cleanUrl);
@@ -217,15 +357,20 @@ export function App() {
     [currentEmployee]
   );
 
-  // ตรวจจับลิงก์เฉพาะโฟลเดอร์จาก URL (?folder=... หรือ ?cat=...) และปุ่มย้อนกลับของเบราว์เซอร์ (popstate)
+  // ตรวจจับลิงก์เฉพาะโฟลเดอร์จาก URL (?folder=... / ?cat=... / ?page=user) และปุ่มย้อนกลับของเบราว์เซอร์ (popstate)
   useEffect(() => {
     const syncRouteFromLocation = () => {
       const params = new URLSearchParams(window.location.search);
       const folderParam = params.get('folder');
       const catParam = params.get('cat');
+      const pageParam = params.get('page');
 
-      if (folderParam) {
+      if (pageParam === 'user') {
+        setActivePageFolder(null);
+        setIsEmployeePortalOpen(true);
+      } else if (folderParam) {
         if (currentEmployee) {
+          setIsEmployeePortalOpen(false);
           setActivePageFolder({ folderId: folderParam });
           setPendingSharedFolderId(null);
         } else {
@@ -234,9 +379,11 @@ export function App() {
           setIsEmployeePortalOpen(true);
         }
       } else if (catParam) {
+        setIsEmployeePortalOpen(false);
         setActivePageFolder({ categoryId: catParam });
       } else {
         setActivePageFolder(null);
+        setIsEmployeePortalOpen(false);
       }
     };
 
@@ -665,9 +812,11 @@ export function App() {
             {/* ปุ่มเข้าสู่ระบบพนักงาน / ดูบัตรพนักงานดิจิทัล */}
             <button
               type="button"
-              onClick={() => setIsEmployeePortalOpen(true)}
+              onClick={() => openUserPage('__user_profile__')}
               className={`inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-full border text-[11px] font-semibold shadow-sm transition ${
-                currentEmployee
+                isEmployeePortalOpen
+                  ? 'bg-sky-600 border-sky-600 text-white shadow'
+                  : currentEmployee
                   ? isLightTheme
                     ? 'bg-emerald-50 hover:bg-emerald-100 border-emerald-300 text-emerald-800'
                     : 'bg-emerald-500/20 hover:bg-emerald-500/30 border-emerald-400/40 text-emerald-200'
@@ -677,7 +826,7 @@ export function App() {
               }`}
               title={
                 currentEmployee
-                  ? `${currentEmployee.fullName} (${currentEmployee.code}) - คลิกเพื่อดูบัตรพนักงาน`
+                  ? `${currentEmployee.fullName} (${currentEmployee.code}) - คลิกเพื่อเปิดหน้าข้อมูลพนักงาน`
                   : 'เข้าสู่ระบบสำหรับพนักงานด้วยรหัสพนักงาน'
               }
             >
@@ -850,9 +999,13 @@ export function App() {
 
             {/* กล่องข้อมูลพนักงานบน Sidebar คอมพิวเตอร์ */}
             <div
-              onClick={() => setIsEmployeePortalOpen(true)}
+              onClick={() => openUserPage('__user_profile__')}
               className={`p-3.5 rounded-2xl border cursor-pointer transition ${
-                currentEmployee
+                isEmployeePortalOpen
+                  ? isLightTheme
+                    ? 'bg-sky-100/90 border-sky-400 ring-2 ring-sky-400/40 shadow-sm'
+                    : 'bg-sky-900/50 border-sky-400 ring-2 ring-sky-400/30'
+                  : currentEmployee
                   ? isLightTheme
                     ? 'bg-gradient-to-br from-emerald-50/90 to-sky-50/90 hover:from-emerald-100/80 hover:to-sky-100/80 border-emerald-200 shadow-2xs'
                     : 'bg-gradient-to-br from-emerald-950/60 to-sky-950/50 hover:from-emerald-900/60 hover:to-sky-900/50 border-emerald-400/30'
@@ -987,10 +1140,10 @@ export function App() {
                 type="button"
                 onClick={() => {
                   setActiveCategoryId('all');
-                  if (isFolderPageOpen) navigateToFolderPage(null);
+                  if (isFolderPageOpen || isEmployeePortalOpen) navigateToFolderPage(null);
                 }}
                 className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-xs font-medium transition ${
-                  activeCategoryId === 'all' && !isFolderPageOpen
+                  activeCategoryId === 'all' && !isFolderPageOpen && !isEmployeePortalOpen
                     ? isLightTheme
                       ? 'bg-sky-600 text-white font-semibold shadow-md shadow-sky-500/25'
                       : 'bg-indigo-600 text-white font-semibold shadow-lg shadow-indigo-600/30'
@@ -1005,7 +1158,7 @@ export function App() {
                 </span>
                 <span
                   className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
-                    activeCategoryId === 'all' && !isFolderPageOpen
+                    activeCategoryId === 'all' && !isFolderPageOpen && !isEmployeePortalOpen
                       ? 'bg-white/25 text-white'
                       : isLightTheme
                       ? 'bg-sky-100 text-sky-900'
@@ -1019,7 +1172,7 @@ export function App() {
               {categories.map((cat) => {
                 const count = visibleLinks.filter((l) => l.category_id === cat.id).length;
                 const isActive =
-                  (activeCategoryId === cat.id && !isFolderPageOpen) ||
+                  (activeCategoryId === cat.id && !isFolderPageOpen && !isEmployeePortalOpen) ||
                   activePageFolder?.categoryId === cat.id;
                 return (
                   <div key={cat.id} className="flex items-center gap-1">
@@ -1027,7 +1180,7 @@ export function App() {
                       type="button"
                       onClick={() => {
                         setActiveCategoryId(cat.id);
-                        if (isFolderPageOpen) navigateToFolderPage(null);
+                        if (isFolderPageOpen || isEmployeePortalOpen) navigateToFolderPage(null);
                       }}
                       className={`flex-1 flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-xs font-medium transition min-w-0 ${
                         isActive
@@ -1162,7 +1315,30 @@ export function App() {
               พื้นที่แสดงผลหลัก (Mobile = Phone Home Screen | Desktop = Workspace Area)
              ===================================================================== */}
           <main className="lg:col-span-9 w-full">
-            {isFolderPageOpen ? (
+            {isEmployeePortalOpen ? (
+              <EmployeePortalModal
+                isOpen={isEmployeePortalOpen}
+                pageMode={true}
+                isLightTheme={isLightTheme}
+                employees={employees}
+                currentEmployee={currentEmployee}
+                links={visibleLinks}
+                iconShape={settings.icon_shape}
+                isSyncingSheet={isSyncingEmployees}
+                isLiveSheet={isLiveEmployeeSheet}
+                initialFolderId={selectedEmployeeFolderId}
+                pendingFolderBanner={pendingFolderBannerText}
+                onLoginSuccess={handleEmployeeLogin}
+                onLogout={handleEmployeeLogout}
+                onRefreshSheet={handleRefreshEmployees}
+                onWorkspaceChanged={() => refreshEmployeeWorkspaceState(currentEmployee?.code)}
+                onOpenFolderPage={(folderId) => navigateToFolderPage({ folderId })}
+                onClose={() => {
+                  closeUserPage();
+                  refreshEmployeeWorkspaceState(currentEmployee?.code);
+                }}
+              />
+            ) : isFolderPageOpen ? (
               <FolderPageView
                 mode={
                   activeSheetFolderObj
@@ -1179,7 +1355,9 @@ export function App() {
                     ? visibleLinks.filter((l) => l.category_id === activeCategoryPageObj.id)
                     : []
                 }
-                allSheetFolders={employeeFolders}
+                allSheetFolders={employeeFolders.filter(
+                  (f) => f.id !== 'folder-sheet5' && f.links.length > 0
+                )}
                 allPersonalFolders={personalFolders}
                 allCategories={categories}
                 currentEmployee={currentEmployee}
@@ -1387,7 +1565,7 @@ export function App() {
           >
             <div className="flex items-center gap-3.5 min-w-0">
               <div
-                onClick={() => setIsEmployeePortalOpen(true)}
+                onClick={() => openUserPage('__user_profile__')}
                 className="w-12 h-12 rounded-2xl bg-gradient-to-br from-sky-500 to-indigo-600 text-white font-bold text-lg flex items-center justify-center shadow-lg shadow-sky-500/25 shrink-0 cursor-pointer"
               >
                 {currentEmployee.firstName.slice(0, 1)}
@@ -1439,14 +1617,11 @@ export function App() {
             <div className="flex items-center gap-2 shrink-0">
               <button
                 type="button"
-                onClick={() => {
-                  setSelectedEmployeeFolderId(null);
-                  setIsEmployeePortalOpen(true);
-                }}
+                onClick={() => openUserPage('__user_profile__')}
                 className="px-3.5 py-2 rounded-2xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-md shadow-sky-600/25 transition"
               >
-                <FolderOpen size={15} />
-                <span>เปิดคลังโฟลเดอร์พนักงาน (17 แผ่นงาน)</span>
+                <UserCheck size={15} />
+                <span>เปิดหน้าข้อมูลพนักงาน</span>
               </button>
               <button
                 type="button"
@@ -1464,10 +1639,7 @@ export function App() {
           </div>
         ) : (
           <div
-            onClick={() => {
-              setSelectedEmployeeFolderId(null);
-              setIsEmployeePortalOpen(true);
-            }}
+            onClick={() => openUserPage('__user_profile__')}
             className={`mb-5 p-3.5 rounded-2xl backdrop-blur-xl border flex items-center justify-between gap-3 cursor-pointer transition ${
               isLightTheme
                 ? 'bg-white/85 hover:bg-white border-sky-200/90 text-slate-800 shadow-sm'
@@ -1486,7 +1658,7 @@ export function App() {
               </div>
               <div className="min-w-0">
                 <p className="text-xs sm:text-sm font-bold truncate">
-                  สำหรับพนักงาน: เข้าสู่ระบบด้วยรหัสพนักงาน 6 หลัก (ปลดล็อก 17 โฟลเดอร์ลิงก์งาน)
+                  สำหรับพนักงาน: เข้าสู่ระบบด้วยรหัสพนักงาน 6 หลัก (ปลดล็อกโฟลเดอร์ลิงก์งาน)
                 </p>
                 <p
                   className={`text-[11px] truncate ${
@@ -1503,16 +1675,190 @@ export function App() {
           </div>
         )}
 
-        {/* โฟลเดอร์ส่วนตัวของพนักงานแต่ละคน + โฟลเดอร์ลิงก์เฉพาะพนักงาน 17 แผ่นงาน (แสดงเฉพาะเมื่อล็อกอินรหัสพนักงานแล้วเท่านั้น) */}
+        {/* โฟลเดอร์ส่วนตัวของพนักงานแต่ละคน + โฟลเดอร์ลิงก์เฉพาะพนักงาน (ปรับแต่งรูปแบบคล้ายโฟลเดอร์บนคอมพิวเตอร์ได้) */}
         {currentEmployee && (
           <div
-            className={`mb-6 p-4 sm:p-5 rounded-3xl backdrop-blur-2xl border shadow-xl transition-colors space-y-5 ${
+            className={`mb-6 p-4 sm:p-5 rounded-3xl backdrop-blur-2xl border shadow-xl transition-colors space-y-4 ${
               isLightTheme
-                ? 'bg-white/85 border-sky-200/90 text-slate-800 shadow-sky-900/5'
+                ? 'bg-white/90 border-sky-200/90 text-slate-800 shadow-sky-900/5'
                 : 'bg-slate-950/60 border-sky-400/25 text-white'
             }`}
           >
-            {/* ส่วนที่ 1: โฟลเดอร์ส่วนตัวของพนักงานแต่ละคน */}
+            {/* แถบโฟลเดอร์ด่วนแบบบุ๊กมาร์กบนคอมพิวเตอร์ (PC Bookmark Bar) + ปุ่มตั้งค่ารูปแบบโฟลเดอร์ */}
+            <div
+              className={`p-2.5 sm:p-3 rounded-2xl border flex flex-wrap items-center justify-between gap-2 ${
+                isLightTheme
+                  ? 'bg-slate-100/90 border-slate-200/90 text-slate-800'
+                  : 'bg-slate-900/90 border-white/10 text-slate-200'
+              }`}
+            >
+              <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+                <span
+                  className={`px-2 py-1 rounded-lg text-[10px] font-extrabold uppercase tracking-wider flex items-center gap-1 ${
+                    isLightTheme
+                      ? 'bg-sky-100 text-sky-900 border border-sky-200'
+                      : 'bg-sky-500/20 text-sky-300 border border-sky-400/30'
+                  }`}
+                >
+                  <Monitor size={11} /> แถบโฟลเดอร์ด่วน
+                </span>
+
+                {/* โฟลเดอร์ส่วนตัวบนแถบบุ๊กมาร์ก */}
+                {personalFolders.map((pf) => (
+                  <button
+                    key={`bm-${pf.id}`}
+                    type="button"
+                    onClick={() => navigateToFolderPage({ folderId: pf.id })}
+                    className={`px-2.5 py-1 rounded-lg border text-xs font-bold flex items-center gap-1.5 transition hover:scale-[1.02] ${
+                      isLightTheme
+                        ? 'bg-white hover:bg-pink-50 border-pink-200 text-slate-800 shadow-2xs'
+                        : 'bg-slate-950 hover:bg-pink-950/50 border-pink-400/30 text-white'
+                    }`}
+                  >
+                    <Folder size={13} style={{ color: pf.color }} className="fill-current shrink-0" />
+                    <span className="truncate max-w-[140px]">{pf.name}</span>
+                    <span
+                      className={`px-1.5 py-0.2 rounded text-[10px] font-extrabold ${
+                        isLightTheme ? 'bg-pink-100 text-pink-900' : 'bg-pink-500/25 text-pink-200'
+                      }`}
+                    >
+                      {pf.links.length}
+                    </span>
+                  </button>
+                ))}
+
+                {/* โฟลเดอร์แผ่นงานที่ปักหมุดไว้บนแถบบุ๊กมาร์ก */}
+                {employeeFolders
+                  .filter(
+                    (ef) =>
+                      ef.id !== 'folder-sheet5' &&
+                      ef.links.length > 0 &&
+                      folderLayoutPrefs.pinnedSheetFolderIds.includes(ef.id)
+                  )
+                  .map((ef) => (
+                    <button
+                      key={`bm-sheet-${ef.id}`}
+                      type="button"
+                      onClick={() => navigateToFolderPage({ folderId: ef.id })}
+                      className={`px-2.5 py-1 rounded-lg border text-xs font-semibold flex items-center gap-1.5 transition hover:scale-[1.02] ${
+                        isLightTheme
+                          ? 'bg-white hover:bg-sky-50 border-slate-200 text-slate-800 shadow-2xs'
+                          : 'bg-slate-950 hover:bg-slate-800 border-white/15 text-slate-200'
+                      }`}
+                    >
+                      <Folder size={13} style={{ color: ef.color }} className="fill-current shrink-0" />
+                      <span className="truncate max-w-[150px]">{ef.sheetName}</span>
+                      <span
+                        className={`px-1.5 py-0.2 rounded text-[10px] font-extrabold ${
+                          isLightTheme ? 'bg-sky-100 text-sky-900' : 'bg-sky-500/25 text-sky-200'
+                        }`}
+                      >
+                        {ef.links.length}
+                      </span>
+                    </button>
+                  ))}
+
+                <button
+                  type="button"
+                  onClick={handleOpenInlineCreatePersonalFolder}
+                  className={`px-2.5 py-1 rounded-lg border border-dashed text-[11px] font-bold flex items-center gap-1 transition ${
+                    isLightTheme
+                      ? 'bg-pink-50/80 hover:bg-pink-100 border-pink-300 text-pink-800'
+                      : 'bg-pink-500/15 hover:bg-pink-500/25 border-pink-400/40 text-pink-200'
+                  }`}
+                  title="สร้างโฟลเดอร์ส่วนตัวใหม่เพิ่มบนแถบโฟลเดอร์"
+                >
+                  <Plus size={12} />
+                  <span>เพิ่มโฟลเดอร์</span>
+                </button>
+              </div>
+
+              {/* ปุ่มปรับรูปแบบโฟลเดอร์บนคอม (Bookmark Bar / Desktop Icons / Cards + จำนวนคอลัมน์) */}
+              <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                <div
+                  className={`inline-flex items-center p-0.5 rounded-xl border ${
+                    isLightTheme ? 'bg-white border-slate-200' : 'bg-slate-950 border-white/15'
+                  }`}
+                >
+                  {(
+                    [
+                      { id: 'bookmark-bar', label: 'แถบกะทัดรัด (เหมือนบนคอม)' },
+                      { id: 'desktop-icons', label: 'ไอคอนโฟลเดอร์' },
+                      { id: 'cards', label: 'การ์ดละเอียด' },
+                    ] as { id: FolderDisplayStyle; label: string }[]
+                  ).map((modeOpt) => (
+                    <button
+                      key={modeOpt.id}
+                      type="button"
+                      onClick={() => updateFolderLayoutPrefs({ displayStyle: modeOpt.id })}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition ${
+                        folderLayoutPrefs.displayStyle === modeOpt.id
+                          ? 'bg-sky-600 text-white shadow-xs'
+                          : isLightTheme
+                          ? 'text-slate-600 hover:text-slate-900'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      {modeOpt.label}
+                    </button>
+                  ))}
+                </div>
+
+                {folderLayoutPrefs.displayStyle !== 'bookmark-bar' && (
+                  <button
+                    type="button"
+                    onClick={() => setIsFolderCustomizeOpen((prev) => !prev)}
+                    className={`px-2.5 py-1.5 rounded-xl border text-[11px] font-bold flex items-center gap-1 transition ${
+                      isFolderCustomizeOpen
+                        ? 'bg-sky-600 border-sky-600 text-white'
+                        : isLightTheme
+                        ? 'bg-white hover:bg-sky-50 border-slate-200 text-slate-700'
+                        : 'bg-slate-950 hover:bg-white/10 border-white/15 text-slate-300'
+                    }`}
+                    title="ปรับจำนวนคอลัมน์และการจัดเรียงโฟลเดอร์บนคอม"
+                  >
+                    <SlidersHorizontal size={12} />
+                    <span>ขนาด ({folderLayoutPrefs.gridCols} คอลัมน์)</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* แผงปรับขนาดคอลัมน์โฟลเดอร์บนคอมพิวเตอร์ */}
+            {isFolderCustomizeOpen && folderLayoutPrefs.displayStyle !== 'bookmark-bar' && (
+              <div
+                className={`p-3 rounded-2xl border flex flex-wrap items-center justify-between gap-3 animate-fade-in ${
+                  isLightTheme
+                    ? 'bg-sky-50/90 border-sky-200 text-slate-800'
+                    : 'bg-slate-900/90 border-sky-500/30 text-slate-200'
+                }`}
+              >
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <span className="font-bold">จำนวนโฟลเดอร์ต่อแถวบนจอคอม:</span>
+                  {([2, 3, 4, 6] as const).map((colNum) => (
+                    <button
+                      key={colNum}
+                      type="button"
+                      onClick={() => updateFolderLayoutPrefs({ gridCols: colNum })}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition ${
+                        folderLayoutPrefs.gridCols === colNum
+                          ? 'bg-sky-600 border-sky-600 text-white shadow-xs'
+                          : isLightTheme
+                          ? 'bg-white hover:bg-sky-100 border-sky-200 text-slate-700'
+                          : 'bg-slate-950 hover:bg-white/10 border-white/15 text-slate-300'
+                      }`}
+                    >
+                      {colNum} คอลัมน์
+                    </button>
+                  ))}
+                </div>
+                <span className="text-[11px] opacity-80">
+                  💡 กดไอคอน 📌 บนโฟลเดอร์แผ่นงานเพื่อปักหมุดไว้บนแถบโฟลเดอร์ด่วนด้านบนสุดได้
+                </span>
+              </div>
+            )}
+
+            {/* ส่วนที่ 1: โฟลเดอร์ส่วนตัวของพนักงานแต่ละคน (สร้าง / แก้ไขชื่อ / เปลี่ยนสี / เลื่อนลำดับ / ลบ ได้โดยตรงบนหน้าโฮม) */}
             <div
               className={`p-4 rounded-2xl border space-y-3 ${
                 isLightTheme
@@ -1534,7 +1880,7 @@ export function App() {
                           : 'bg-pink-500/20 border-pink-400/30 text-pink-200'
                       }`}
                     >
-                      ส่วนตัวเฉพาะคุณ • เพิ่มลิงก์ & สมุดโน้ตได้
+                      ส่วนตัวเฉพาะคุณ • ปรับแต่งโฟลเดอร์ เพิ่มลิงก์ & สมุดโน้ตได้
                     </span>
                   </div>
                   <p
@@ -1542,16 +1888,13 @@ export function App() {
                       isLightTheme ? 'text-slate-600' : 'text-slate-300'
                     }`}
                   >
-                    คลิกเปิดโฟลเดอร์ส่วนตัวเพื่อเพิ่มลิงก์ที่ใช้บ่อย หรือจดโน้ตบันทึกช่วยจำในโฟลเดอร์
+                    คลิกเปิดโฟลเดอร์ส่วนตัวเพื่อเพิ่มลิงก์ที่ใช้บ่อย หรือกด ✏️ แก้ไขชื่อ/สี/จัดเรียงโฟลเดอร์ได้ทันที
                   </p>
                 </div>
 
                 <button
                   type="button"
-                  onClick={() => {
-                    setSelectedEmployeeFolderId('__create_personal__');
-                    setIsEmployeePortalOpen(true);
-                  }}
+                  onClick={handleOpenInlineCreatePersonalFolder}
                   className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-pink-500 to-indigo-600 hover:from-pink-400 hover:to-indigo-500 text-xs font-bold text-white flex items-center gap-1.5 shadow transition"
                 >
                   <FolderPlus size={14} />
@@ -1559,83 +1902,427 @@ export function App() {
                 </button>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {personalFolders.map((pFolder) => {
-                  const noteCount = notesCountMap[pFolder.id] || 0;
-                  return (
+              {/* ฟอร์มสร้างหรือแก้ไขโฟลเดอร์ส่วนตัวแบบ Inline (แสดงบนหน้าโฮมทันที ไม่เด้งป๊อปอัพ) */}
+              {isInlinePersonalFormOpen && (
+                <form
+                  onSubmit={handleSaveInlinePersonalFolder}
+                  className={`p-3.5 sm:p-4 rounded-2xl border-2 space-y-3 animate-fade-in ${
+                    isLightTheme
+                      ? 'bg-white border-pink-300 shadow-md'
+                      : 'bg-slate-950 border-pink-500/50 shadow-xl'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span
+                      className={`text-xs sm:text-sm font-bold flex items-center gap-1.5 ${
+                        isLightTheme ? 'text-pink-800' : 'text-pink-300'
+                      }`}
+                    >
+                      <FolderPlus size={15} />
+                      <span>
+                        {editingInlineFolderId
+                          ? 'แก้ไขชื่อ / สีโฟลเดอร์ส่วนตัว'
+                          : 'สร้างโฟลเดอร์ส่วนตัวใหม่บนคอมของคุณ'}
+                      </span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsInlinePersonalFormOpen(false);
+                        setEditingInlineFolderId(null);
+                      }}
+                      className={`p-1 rounded-lg ${
+                        isLightTheme
+                          ? 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                          : 'bg-white/10 hover:bg-white/20 text-slate-300'
+                      }`}
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label
+                        className={`block text-[11px] font-bold mb-1 ${
+                          isLightTheme ? 'text-slate-700' : 'text-slate-300'
+                        }`}
+                      >
+                        ชื่อโฟลเดอร์ส่วนตัว *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={inlineFolderName}
+                        onChange={(e) => setInlineFolderName(e.target.value)}
+                        placeholder="เช่น ที่ทำงาน, ลงลิงก์ประจำวัน, ระบบงานสาขา..."
+                        className={`w-full px-3 py-2 rounded-xl border text-xs sm:text-sm focus:outline-none ${
+                          isLightTheme
+                            ? 'bg-slate-50 border-slate-300 focus:border-pink-500 text-slate-900'
+                            : 'bg-slate-900 border-white/15 focus:border-pink-400 text-white'
+                        }`}
+                      />
+                    </div>
+                    <div>
+                      <label
+                        className={`block text-[11px] font-bold mb-1 ${
+                          isLightTheme ? 'text-slate-700' : 'text-slate-300'
+                        }`}
+                      >
+                        คำอธิบายโฟลเดอร์
+                      </label>
+                      <input
+                        type="text"
+                        value={inlineFolderDesc}
+                        onChange={(e) => setInlineFolderDesc(e.target.value)}
+                        placeholder="เช่น รวมลิงก์ที่ใช้เปิดทำงานทุกเช้า"
+                        className={`w-full px-3 py-2 rounded-xl border text-xs sm:text-sm focus:outline-none ${
+                          isLightTheme
+                            ? 'bg-slate-50 border-slate-300 focus:border-pink-500 text-slate-900'
+                            : 'bg-slate-900 border-white/15 focus:border-pink-400 text-white'
+                        }`}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span
+                        className={`text-xs font-semibold ${
+                          isLightTheme ? 'text-slate-600' : 'text-slate-400'
+                        }`}
+                      >
+                        สีโฟลเดอร์:
+                      </span>
+                      {HOME_PERSONAL_FOLDER_COLORS.map((colorHex) => (
+                        <button
+                          key={colorHex}
+                          type="button"
+                          onClick={() => setInlineFolderColor(colorHex)}
+                          className={`w-6 h-6 rounded-full border-2 transition flex items-center justify-center ${
+                            inlineFolderColor === colorHex
+                              ? 'border-slate-900 dark:border-white scale-110 shadow'
+                              : 'border-transparent opacity-75 hover:opacity-100'
+                          }`}
+                          style={{ backgroundColor: colorHex }}
+                        >
+                          {inlineFolderColor === colorHex && (
+                            <Check size={12} className="text-white" />
+                          )}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsInlinePersonalFormOpen(false);
+                          setEditingInlineFolderId(null);
+                        }}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-semibold ${
+                          isLightTheme
+                            ? 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                            : 'bg-white/10 hover:bg-white/20 text-slate-300'
+                        }`}
+                      >
+                        ยกเลิก
+                      </button>
+                      <button
+                        type="submit"
+                        className="px-4 py-1.5 rounded-xl bg-gradient-to-r from-pink-500 to-indigo-600 hover:from-pink-400 hover:to-indigo-500 text-xs font-bold text-white shadow"
+                      >
+                        {editingInlineFolderId ? 'บันทึกการแก้ไข' : 'สร้างโฟลเดอร์'}
+                      </button>
+                    </div>
+                  </div>
+                </form>
+              )}
+
+              {/* แสดงโฟลเดอร์ส่วนตัวตามรูปแบบที่เลือก (Bookmark Bar / Desktop Icons / Cards) */}
+              {folderLayoutPrefs.displayStyle === 'bookmark-bar' ? (
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  {personalFolders.map((pFolder, idx) => (
                     <div
                       key={pFolder.id}
                       onClick={() => navigateToFolderPage({ folderId: pFolder.id })}
-                      className={`group p-3.5 rounded-2xl border cursor-pointer transition-all hover:-translate-y-0.5 flex flex-col justify-between gap-2 ${
+                      className={`group inline-flex items-center gap-2 px-3 py-2 rounded-xl border cursor-pointer transition hover:-translate-y-0.5 ${
                         isLightTheme
-                          ? 'bg-white hover:bg-pink-50/50 border-pink-200 hover:border-pink-400 shadow-sm'
-                          : 'bg-slate-950/85 hover:bg-slate-900 border-pink-400/30 hover:border-pink-400/60'
+                          ? 'bg-white hover:bg-pink-50 border-pink-200 shadow-2xs'
+                          : 'bg-slate-950/90 hover:bg-slate-900 border-pink-400/35'
                       }`}
                     >
-                      <div className="flex items-start justify-between gap-2.5">
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <div
-                            className="w-10 h-10 rounded-xl flex items-center justify-center text-white shadow shrink-0"
-                            style={{
-                              background: `linear-gradient(135deg, ${pFolder.color} 0%, #1e293b 100%)`,
-                            }}
-                          >
-                            <Star size={18} className="fill-white/90" />
-                          </div>
-                          <div className="min-w-0">
-                            <h4
-                              className={`text-xs sm:text-sm font-bold truncate ${
-                                isLightTheme
-                                  ? 'text-slate-900 group-hover:text-pink-700'
-                                  : 'text-white group-hover:text-pink-300'
-                              }`}
-                            >
-                              {pFolder.name}
-                            </h4>
-                            <div className="flex flex-wrap items-center gap-1.5">
-                              <span
-                                className={`text-[11px] font-semibold ${
-                                  isLightTheme ? 'text-pink-700' : 'text-pink-300'
-                                }`}
-                              >
-                                {pFolder.links.length} ลิงก์
-                              </span>
-                              <span className="text-slate-400">•</span>
-                              <span
-                                className={`inline-flex items-center gap-1 text-[11px] font-semibold ${
-                                  isLightTheme ? 'text-amber-700' : 'text-amber-300'
-                                }`}
-                              >
-                                <StickyNote size={11} /> {noteCount} โน้ต
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-semibold shrink-0 ${
-                            isLightTheme
-                              ? 'bg-pink-50 text-pink-700 border border-pink-200'
-                              : 'bg-pink-500/20 text-pink-200'
-                          }`}
-                        >
-                          เปิดดู →
-                        </span>
-                      </div>
-
-                      <p
-                        className={`text-[11px] line-clamp-2 leading-relaxed ${
-                          isLightTheme ? 'text-slate-600' : 'text-slate-300'
+                      <Folder
+                        size={16}
+                        style={{ color: pFolder.color }}
+                        className="fill-current shrink-0"
+                      />
+                      <span className="text-xs font-bold">{pFolder.name}</span>
+                      <span
+                        className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+                          isLightTheme
+                            ? 'bg-pink-100 text-pink-900'
+                            : 'bg-pink-500/25 text-pink-200'
                         }`}
                       >
-                        {pFolder.description}
-                      </p>
+                        {pFolder.links.length}
+                      </span>
+                      <div className="flex items-center gap-0.5 ml-1">
+                        {personalFolders.length > 1 && (
+                          <>
+                            <button
+                              type="button"
+                              disabled={idx === 0}
+                              onClick={(e) =>
+                                handleMoveInlinePersonalFolder(pFolder.id, 'left', e)
+                              }
+                              className="p-1 rounded hover:bg-black/10 disabled:opacity-30"
+                              title="เลื่อนซ้าย"
+                            >
+                              <ChevronLeft size={11} />
+                            </button>
+                            <button
+                              type="button"
+                              disabled={idx === personalFolders.length - 1}
+                              onClick={(e) =>
+                                handleMoveInlinePersonalFolder(pFolder.id, 'right', e)
+                              }
+                              className="p-1 rounded hover:bg-black/10 disabled:opacity-30"
+                              title="เลื่อนขวา"
+                            >
+                              <ChevronRight size={11} />
+                            </button>
+                          </>
+                        )}
+                        <button
+                          type="button"
+                          onClick={(e) => handleOpenInlineEditPersonalFolder(pFolder, e)}
+                          className="p-1 rounded hover:bg-black/10"
+                          title="แก้ไขโฟลเดอร์"
+                        >
+                          <Pencil size={11} />
+                        </button>
+                        {personalFolders.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={(e) => handleDeleteInlinePersonalFolder(pFolder, e)}
+                            className="p-1 rounded hover:bg-rose-500/20 text-rose-500"
+                            title="ลบโฟลเดอร์"
+                          >
+                            <Trash2 size={11} />
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  );
-                })}
-              </div>
+                  ))}
+                </div>
+              ) : folderLayoutPrefs.displayStyle === 'desktop-icons' ? (
+                <div
+                  className={`grid gap-3 ${
+                    folderLayoutPrefs.gridCols === 6
+                      ? 'grid-cols-2 sm:grid-cols-4 lg:grid-cols-6'
+                      : folderLayoutPrefs.gridCols === 4
+                      ? 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-4'
+                      : folderLayoutPrefs.gridCols === 2
+                      ? 'grid-cols-1 sm:grid-cols-2'
+                      : 'grid-cols-2 sm:grid-cols-3'
+                  }`}
+                >
+                  {personalFolders.map((pFolder) => (
+                    <div
+                      key={pFolder.id}
+                      onClick={() => navigateToFolderPage({ folderId: pFolder.id })}
+                      className={`group relative p-3 rounded-2xl border cursor-pointer transition hover:-translate-y-0.5 flex flex-col items-center text-center gap-1.5 ${
+                        isLightTheme
+                          ? 'bg-white hover:bg-pink-50/60 border-pink-200 shadow-2xs'
+                          : 'bg-slate-950/85 hover:bg-slate-900 border-pink-400/30'
+                      }`}
+                    >
+                      <div className="absolute top-2 right-2 flex items-center gap-0.5 opacity-80 group-hover:opacity-100">
+                        <button
+                          type="button"
+                          onClick={(e) => handleOpenInlineEditPersonalFolder(pFolder, e)}
+                          className="p-1 rounded-lg hover:bg-black/10"
+                          title="แก้ไขโฟลเดอร์"
+                        >
+                          <Pencil size={11} />
+                        </button>
+                        {personalFolders.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={(e) => handleDeleteInlinePersonalFolder(pFolder, e)}
+                            className="p-1 rounded-lg hover:bg-rose-500/20 text-rose-500"
+                            title="ลบโฟลเดอร์"
+                          >
+                            <Trash2 size={11} />
+                          </button>
+                        )}
+                      </div>
+                      <div
+                        className="w-12 h-12 rounded-2xl flex items-center justify-center text-white shadow-md"
+                        style={{
+                          background: `linear-gradient(135deg, ${pFolder.color} 0%, #1e293b 100%)`,
+                        }}
+                      >
+                        <Folder size={24} className="fill-white/90" />
+                      </div>
+                      <p className="text-xs font-bold truncate w-full px-1">{pFolder.name}</p>
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          isLightTheme
+                            ? 'bg-pink-100 text-pink-900'
+                            : 'bg-pink-500/20 text-pink-200'
+                        }`}
+                      >
+                        {pFolder.links.length} ลิงก์
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div
+                  className={`grid gap-3 ${
+                    folderLayoutPrefs.gridCols === 6
+                      ? 'grid-cols-1 sm:grid-cols-3 lg:grid-cols-6'
+                      : folderLayoutPrefs.gridCols === 4
+                      ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4'
+                      : folderLayoutPrefs.gridCols === 2
+                      ? 'grid-cols-1 sm:grid-cols-2'
+                      : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'
+                  }`}
+                >
+                  {personalFolders.map((pFolder, idx) => {
+                    const noteCount = notesCountMap[pFolder.id] || 0;
+                    return (
+                      <div
+                        key={pFolder.id}
+                        onClick={() => navigateToFolderPage({ folderId: pFolder.id })}
+                        className={`group p-3.5 rounded-2xl border cursor-pointer transition-all hover:-translate-y-0.5 flex flex-col justify-between gap-2 ${
+                          isLightTheme
+                            ? 'bg-white hover:bg-pink-50/50 border-pink-200 hover:border-pink-400 shadow-sm'
+                            : 'bg-slate-950/85 hover:bg-slate-900 border-pink-400/30 hover:border-pink-400/60'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div
+                              className="w-10 h-10 rounded-xl flex items-center justify-center text-white shadow shrink-0"
+                              style={{
+                                background: `linear-gradient(135deg, ${pFolder.color} 0%, #1e293b 100%)`,
+                              }}
+                            >
+                              <Star size={18} className="fill-white/90" />
+                            </div>
+                            <div className="min-w-0">
+                              <h4
+                                className={`text-xs sm:text-sm font-bold truncate ${
+                                  isLightTheme
+                                    ? 'text-slate-900 group-hover:text-pink-700'
+                                    : 'text-white group-hover:text-pink-300'
+                                }`}
+                              >
+                                {pFolder.name}
+                              </h4>
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <span
+                                  className={`text-[11px] font-semibold ${
+                                    isLightTheme ? 'text-pink-700' : 'text-pink-300'
+                                  }`}
+                                >
+                                  {pFolder.links.length} ลิงก์
+                                </span>
+                                <span className="text-slate-400">•</span>
+                                <span
+                                  className={`inline-flex items-center gap-1 text-[11px] font-semibold ${
+                                    isLightTheme ? 'text-amber-700' : 'text-amber-300'
+                                  }`}
+                                >
+                                  <StickyNote size={11} /> {noteCount} โน้ต
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* ปุ่มแก้ไข / เลื่อนลำดับ / ลบโฟลเดอร์ส่วนตัวโดยตรง */}
+                          <div className="flex items-center gap-1 shrink-0">
+                            {personalFolders.length > 1 && (
+                              <>
+                                <button
+                                  type="button"
+                                  disabled={idx === 0}
+                                  onClick={(e) =>
+                                    handleMoveInlinePersonalFolder(pFolder.id, 'left', e)
+                                  }
+                                  className={`p-1 rounded-lg border disabled:opacity-30 transition ${
+                                    isLightTheme
+                                      ? 'bg-slate-50 hover:bg-slate-200 border-slate-200 text-slate-700'
+                                      : 'bg-white/10 hover:bg-white/20 border-white/10 text-slate-200'
+                                  }`}
+                                  title="เลื่อนโฟลเดอร์ไปทางซ้าย"
+                                >
+                                  <ChevronLeft size={12} />
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={idx === personalFolders.length - 1}
+                                  onClick={(e) =>
+                                    handleMoveInlinePersonalFolder(pFolder.id, 'right', e)
+                                  }
+                                  className={`p-1 rounded-lg border disabled:opacity-30 transition ${
+                                    isLightTheme
+                                      ? 'bg-slate-50 hover:bg-slate-200 border-slate-200 text-slate-700'
+                                      : 'bg-white/10 hover:bg-white/20 border-white/10 text-slate-200'
+                                  }`}
+                                  title="เลื่อนโฟลเดอร์ไปทางขวา"
+                                >
+                                  <ChevronRight size={12} />
+                                </button>
+                              </>
+                            )}
+                            <button
+                              type="button"
+                              onClick={(e) => handleOpenInlineEditPersonalFolder(pFolder, e)}
+                              className={`p-1.5 rounded-lg border transition ${
+                                isLightTheme
+                                  ? 'bg-pink-50 hover:bg-pink-100 border-pink-200 text-pink-700'
+                                  : 'bg-white/10 hover:bg-white/20 border-white/10 text-slate-200'
+                              }`}
+                              title="แก้ไขชื่อ/สีโฟลเดอร์ส่วนตัว"
+                            >
+                              <Pencil size={12} />
+                            </button>
+                            {personalFolders.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={(e) => handleDeleteInlinePersonalFolder(pFolder, e)}
+                                className={`p-1.5 rounded-lg border transition ${
+                                  isLightTheme
+                                    ? 'bg-rose-50 hover:bg-rose-100 border-rose-200 text-rose-600'
+                                    : 'bg-white/10 hover:bg-rose-500/30 border-white/10 text-rose-300'
+                                }`}
+                                title="ลบโฟลเดอร์ส่วนตัว"
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        <p
+                          className={`text-[11px] line-clamp-2 leading-relaxed ${
+                            isLightTheme ? 'text-slate-600' : 'text-slate-300'
+                          }`}
+                        >
+                          {pFolder.description}
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
-            {/* ส่วนที่ 2: โฟลเดอร์ลิงก์เฉพาะพนักงาน 17 แผ่นงาน (ข้อมูลส่วนกลาง) */}
+            {/* ส่วนที่ 2: โฟลเดอร์ลิงก์เฉพาะพนักงาน (แยกตามแผ่นงาน - ไม่แสดง "ชีต5" ที่ไม่มีลิงก์) */}
             <div>
               <div className="flex flex-wrap items-center justify-between gap-2 mb-3.5">
                 <div>
@@ -1651,7 +2338,7 @@ export function App() {
                           : 'bg-sky-500/20 border-sky-400/30 text-sky-300'
                       }`}
                     >
-                      17 โฟลเดอร์ส่วนกลาง
+                      16 โฟลเดอร์ส่วนกลาง
                     </span>
                   </div>
                   <p
@@ -1659,7 +2346,7 @@ export function App() {
                       isLightTheme ? 'text-slate-600' : 'text-slate-300'
                     }`}
                   >
-                    คลิกที่โฟลเดอร์เพื่อเปิดดูลิงก์ คัดลอกส่งต่อใน LINE หรือกดเก็บลิงก์เข้าโฟลเดอร์ส่วนตัวของฉัน
+                    คลิกที่โฟลเดอร์เพื่อเปิดหน้าลิงก์ หรือกด 📌 ปักหมุดโฟลเดอร์ที่ใช้บ่อยไว้บนแถบโฟลเดอร์ด่วนด้านบนสุด
                   </p>
                 </div>
 
@@ -1685,85 +2372,251 @@ export function App() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {employeeFolders
-                  .filter((f) => (showArchiveEmployeeFolders ? true : !f.isArchive))
-                  .map((folder) => {
-                    const noteCount = notesCountMap[folder.id] || 0;
-                    return (
-                      <div
-                        key={folder.id}
-                        onClick={() => navigateToFolderPage({ folderId: folder.id })}
-                        className={`group p-3.5 rounded-2xl border cursor-pointer transition-all hover:-translate-y-0.5 flex flex-col justify-between gap-2 ${
-                          isLightTheme
-                            ? 'bg-sky-50/70 hover:bg-white border-sky-200/90 hover:border-sky-400 shadow-sm'
-                            : 'bg-slate-900/75 hover:bg-slate-900 border-white/10 hover:border-sky-400/50'
-                        }`}
-                      >
-                        <div className="flex items-start justify-between gap-2.5">
-                          <div className="flex items-center gap-2.5 min-w-0">
+              {(() => {
+                const activeSheetFolders = employeeFolders
+                  .filter(
+                    (f) =>
+                      f.id !== 'folder-sheet5' &&
+                      f.links.length > 0 &&
+                      (showArchiveEmployeeFolders ? true : !f.isArchive)
+                  )
+                  .sort((a, b) => {
+                    const aPinned = folderLayoutPrefs.pinnedSheetFolderIds.includes(a.id);
+                    const bPinned = folderLayoutPrefs.pinnedSheetFolderIds.includes(b.id);
+                    if (aPinned !== bPinned) return aPinned ? -1 : 1;
+                    return 0;
+                  });
+
+                if (folderLayoutPrefs.displayStyle === 'bookmark-bar') {
+                  return (
+                    <div className="flex flex-wrap items-center gap-2">
+                      {activeSheetFolders.map((folder) => {
+                        const isPinned = folderLayoutPrefs.pinnedSheetFolderIds.includes(folder.id);
+                        return (
+                          <div
+                            key={folder.id}
+                            onClick={() => navigateToFolderPage({ folderId: folder.id })}
+                            className={`group inline-flex items-center gap-2 px-3 py-2 rounded-xl border cursor-pointer transition hover:-translate-y-0.5 ${
+                              isLightTheme
+                                ? 'bg-sky-50/80 hover:bg-white border-sky-200/90 hover:border-sky-400 shadow-2xs'
+                                : 'bg-slate-900/80 hover:bg-slate-800 border-white/10 hover:border-sky-400/50'
+                            }`}
+                          >
+                            <Folder
+                              size={16}
+                              style={{ color: folder.color }}
+                              className="fill-current shrink-0"
+                            />
+                            <span className="text-xs font-bold">{folder.sheetName}</span>
+                            <span
+                              className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+                                isLightTheme
+                                  ? 'bg-sky-600 text-white'
+                                  : 'bg-sky-500/25 text-sky-200'
+                              }`}
+                            >
+                              {folder.links.length}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={(e) => togglePinSheetFolder(folder.id, e)}
+                              className={`p-1 rounded-lg transition ${
+                                isPinned
+                                  ? 'text-amber-500'
+                                  : 'text-slate-400 opacity-60 hover:opacity-100'
+                              }`}
+                              title={
+                                isPinned
+                                  ? 'เลิกปักหมุดจากแถบโฟลเดอร์ด่วน'
+                                  : 'ปักหมุดโฟลเดอร์นี้ไว้บนแถบโฟลเดอร์ด่วน'
+                              }
+                            >
+                              <Pin size={11} className={isPinned ? 'fill-current' : ''} />
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                }
+
+                if (folderLayoutPrefs.displayStyle === 'desktop-icons') {
+                  return (
+                    <div
+                      className={`grid gap-3 ${
+                        folderLayoutPrefs.gridCols === 6
+                          ? 'grid-cols-2 sm:grid-cols-4 lg:grid-cols-6'
+                          : folderLayoutPrefs.gridCols === 4
+                          ? 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-4'
+                          : folderLayoutPrefs.gridCols === 2
+                          ? 'grid-cols-1 sm:grid-cols-2'
+                          : 'grid-cols-2 sm:grid-cols-3'
+                      }`}
+                    >
+                      {activeSheetFolders.map((folder) => {
+                        const isPinned = folderLayoutPrefs.pinnedSheetFolderIds.includes(folder.id);
+                        return (
+                          <div
+                            key={folder.id}
+                            onClick={() => navigateToFolderPage({ folderId: folder.id })}
+                            className={`group relative p-3.5 rounded-2xl border cursor-pointer transition hover:-translate-y-0.5 flex flex-col items-center text-center gap-1.5 ${
+                              isLightTheme
+                                ? 'bg-sky-50/70 hover:bg-white border-sky-200/90 hover:border-sky-400 shadow-2xs'
+                                : 'bg-slate-900/75 hover:bg-slate-900 border-white/10 hover:border-sky-400/50'
+                            }`}
+                          >
+                            <button
+                              type="button"
+                              onClick={(e) => togglePinSheetFolder(folder.id, e)}
+                              className={`absolute top-2 right-2 p-1 rounded-lg transition ${
+                                isPinned
+                                  ? 'text-amber-500'
+                                  : 'text-slate-400 opacity-50 group-hover:opacity-100'
+                              }`}
+                              title="ปักหมุดไว้บนแถบโฟลเดอร์ด่วน"
+                            >
+                              <Pin size={12} className={isPinned ? 'fill-current' : ''} />
+                            </button>
                             <div
-                              className="w-10 h-10 rounded-xl flex items-center justify-center text-white shadow shrink-0"
+                              className="w-12 h-12 rounded-2xl flex items-center justify-center text-white shadow-md"
                               style={{
                                 background: `linear-gradient(135deg, ${folder.color} 0%, #1e293b 100%)`,
                               }}
                             >
-                              <Folder size={19} />
+                              <Folder size={24} className="fill-white/90" />
                             </div>
-                            <div className="min-w-0">
-                              <h4
-                                className={`text-xs sm:text-sm font-bold truncate ${
-                                  isLightTheme
-                                    ? 'text-slate-900 group-hover:text-sky-700'
-                                    : 'text-white group-hover:text-sky-300'
-                                }`}
-                              >
-                                {folder.sheetName}
-                              </h4>
-                              <div className="flex flex-wrap items-center gap-1.5">
-                                <span
-                                  className={`text-[11px] font-semibold ${
-                                    isLightTheme ? 'text-sky-700' : 'text-sky-400'
-                                  }`}
-                                >
-                                  {folder.links.length} ลิงก์
-                                </span>
-                                {noteCount > 0 && (
-                                  <span
-                                    className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold ${
-                                      isLightTheme
-                                        ? 'bg-amber-100 text-amber-800 border border-amber-300'
-                                        : 'bg-amber-500/20 text-amber-300 border border-amber-400/30'
-                                    }`}
-                                  >
-                                    <StickyNote size={10} /> {noteCount} โน้ต
-                                  </span>
-                                )}
-                              </div>
-                            </div>
+                            <p className="text-xs font-bold truncate w-full px-1">
+                              {folder.sheetName}
+                            </p>
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                isLightTheme
+                                  ? 'bg-sky-600 text-white'
+                                  : 'bg-sky-500/20 text-sky-300'
+                              }`}
+                            >
+                              {folder.links.length} ลิงก์
+                            </span>
                           </div>
-                          <span
-                            className={`px-2 py-0.5 rounded-full text-[10px] font-semibold shrink-0 ${
-                              isLightTheme
-                                ? 'bg-white text-sky-700 border border-sky-200'
-                                : 'bg-white/10 text-slate-300'
-                            }`}
-                          >
-                            เปิดดู →
-                          </span>
-                        </div>
+                        );
+                      })}
+                    </div>
+                  );
+                }
 
-                        <p
-                          className={`text-[11px] line-clamp-2 leading-relaxed ${
-                            isLightTheme ? 'text-slate-600' : 'text-slate-300'
+                return (
+                  <div
+                    className={`grid gap-3 ${
+                      folderLayoutPrefs.gridCols === 6
+                        ? 'grid-cols-1 sm:grid-cols-3 lg:grid-cols-6'
+                        : folderLayoutPrefs.gridCols === 4
+                        ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4'
+                        : folderLayoutPrefs.gridCols === 2
+                        ? 'grid-cols-1 sm:grid-cols-2'
+                        : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'
+                    }`}
+                  >
+                    {activeSheetFolders.map((folder) => {
+                      const noteCount = notesCountMap[folder.id] || 0;
+                      const isPinned = folderLayoutPrefs.pinnedSheetFolderIds.includes(folder.id);
+                      return (
+                        <div
+                          key={folder.id}
+                          onClick={() => navigateToFolderPage({ folderId: folder.id })}
+                          className={`group p-3.5 rounded-2xl border cursor-pointer transition-all hover:-translate-y-0.5 flex flex-col justify-between gap-2 ${
+                            isLightTheme
+                              ? 'bg-sky-50/70 hover:bg-white border-sky-200/90 hover:border-sky-400 shadow-sm'
+                              : 'bg-slate-900/75 hover:bg-slate-900 border-white/10 hover:border-sky-400/50'
                           }`}
                         >
-                          {folder.description}
-                        </p>
-                      </div>
-                    );
-                  })}
-              </div>
+                          <div className="flex items-start justify-between gap-2.5">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div
+                                className="w-10 h-10 rounded-xl flex items-center justify-center text-white shadow shrink-0"
+                                style={{
+                                  background: `linear-gradient(135deg, ${folder.color} 0%, #1e293b 100%)`,
+                                }}
+                              >
+                                <Folder size={19} />
+                              </div>
+                              <div className="min-w-0">
+                                <h4
+                                  className={`text-xs sm:text-sm font-bold truncate ${
+                                    isLightTheme
+                                      ? 'text-slate-900 group-hover:text-sky-700'
+                                      : 'text-white group-hover:text-sky-300'
+                                  }`}
+                                >
+                                  {folder.sheetName}
+                                </h4>
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  <span
+                                    className={`text-[11px] font-semibold ${
+                                      isLightTheme ? 'text-sky-700' : 'text-sky-400'
+                                    }`}
+                                  >
+                                    {folder.links.length} ลิงก์
+                                  </span>
+                                  {noteCount > 0 && (
+                                    <span
+                                      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold ${
+                                        isLightTheme
+                                          ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                                          : 'bg-amber-500/20 text-amber-300 border border-amber-400/30'
+                                      }`}
+                                    >
+                                      <StickyNote size={10} /> {noteCount} โน้ต
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button
+                                type="button"
+                                onClick={(e) => togglePinSheetFolder(folder.id, e)}
+                                className={`p-1.5 rounded-lg border transition ${
+                                  isPinned
+                                    ? isLightTheme
+                                      ? 'bg-amber-50 border-amber-300 text-amber-600'
+                                      : 'bg-amber-500/20 border-amber-400/40 text-amber-300'
+                                    : isLightTheme
+                                    ? 'bg-white hover:bg-sky-50 border-sky-200 text-slate-400 hover:text-sky-700'
+                                    : 'bg-white/5 hover:bg-white/15 border-white/10 text-slate-400 hover:text-white'
+                                }`}
+                                title={
+                                  isPinned
+                                    ? 'ปักหมุดบนแถบโฟลเดอร์ด่วนแล้ว (คลิกเพื่อเอาออก)'
+                                    : 'ปักหมุดไว้บนแถบโฟลเดอร์ด่วนด้านบน'
+                                }
+                              >
+                                <Pin size={12} className={isPinned ? 'fill-current' : ''} />
+                              </button>
+                              <span
+                                className={`px-2 py-0.5 rounded-full text-[10px] font-semibold shrink-0 ${
+                                  isLightTheme
+                                    ? 'bg-white text-sky-700 border border-sky-200'
+                                    : 'bg-white/10 text-slate-300'
+                                }`}
+                              >
+                                เปิดดู →
+                              </span>
+                            </div>
+                          </div>
+
+                          <p
+                            className={`text-[11px] line-clamp-2 leading-relaxed ${
+                              isLightTheme ? 'text-slate-600' : 'text-slate-300'
+                            }`}
+                          >
+                            {folder.description}
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
             </div>
           </div>
         )}
@@ -2228,29 +3081,6 @@ export function App() {
         onDeleteCategory={handleDeleteCategory}
         onOpenAppearanceSettings={() => setIsSettingsOpen(true)}
         onReloadFromSupabase={loadHubData}
-      />
-
-      <EmployeePortalModal
-        isOpen={isEmployeePortalOpen}
-        employees={employees}
-        currentEmployee={currentEmployee}
-        links={visibleLinks}
-        iconShape={settings.icon_shape}
-        isSyncingSheet={isSyncingEmployees}
-        isLiveSheet={isLiveEmployeeSheet}
-        initialFolderId={selectedEmployeeFolderId}
-        pendingFolderBanner={pendingFolderBannerText}
-        onLoginSuccess={handleEmployeeLogin}
-        onLogout={handleEmployeeLogout}
-        onRefreshSheet={handleRefreshEmployees}
-        onWorkspaceChanged={() => refreshEmployeeWorkspaceState(currentEmployee?.code)}
-        onOpenFolderPage={(folderId) => navigateToFolderPage({ folderId })}
-        onClose={() => {
-          setIsEmployeePortalOpen(false);
-          setSelectedEmployeeFolderId(null);
-          setPendingSharedFolderId(null);
-          refreshEmployeeWorkspaceState(currentEmployee?.code);
-        }}
       />
 
       <SettingsModal
