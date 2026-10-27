@@ -179,7 +179,7 @@ describe('App Hub Launcher - Link & Icon Studio Service', () => {
 
     const emp2 = findEmployeeByCode('110208', employees);
     expect(emp2).toBeDefined();
-    expect(emp2?.branch).toBe('วังน้อย');
+    expect(emp2?.branch).toBe('สำนักงาน');
 
     // ทดสอบการแปลง CSV จาก Google Sheets
     const sampleCsv = `"ลำดับ","รหัส","","zone","สาขา","คำนำหน้า","ชื่อ","สกุล","ตำแหน่ง","วันที่เริ่มงาน"\n"1","999888","","A","สุขุมวิท 50","นาย","ทดสอบ","ระบบ","ผู้จัดการสาขา","01/05/2020"`;
