@@ -1901,13 +1901,13 @@ export function App() {
           >
             {/* แถบโฟลเดอร์ด่วนแบบบุ๊กมาร์กบนคอมพิวเตอร์ (PC Bookmark Bar) + ปุ่มตั้งค่ารูปแบบโฟลเดอร์ */}
             <div
-              className={`p-2.5 sm:p-3 rounded-2xl border flex flex-wrap items-center justify-between gap-2 ${
+              className={`p-2.5 sm:p-3 rounded-2xl border flex flex-wrap items-center justify-between gap-2.5 overflow-hidden ${
                 isLightTheme
                   ? 'bg-slate-100/90 border-slate-200/90 text-slate-800'
                   : 'bg-slate-900/90 border-white/10 text-slate-200'
               }`}
             >
-              <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+              <div className="flex flex-wrap items-center gap-1.5 min-w-0 max-w-full">
                 <span
                   className={`px-2 py-1 rounded-lg text-[10px] font-extrabold uppercase tracking-wider flex items-center gap-1 ${
                     isLightTheme
@@ -2015,7 +2015,7 @@ export function App() {
                   title="สร้างโฟลเดอร์ส่วนตัวใหม่เพิ่มบนแถบโฟลเดอร์"
                 >
                   <Plus size={12} />
-                  <span>+ ส่วนตัว</span>
+                  <span>ส่วนตัว</span>
                 </button>
 
                 <button
@@ -2029,37 +2029,39 @@ export function App() {
                   title={`สร้างโฟลเดอร์สาขาใหม่สำหรับสาขา ${currentEmployee?.branch || ''}`}
                 >
                   <Building2 size={12} />
-                  <span>+ โฟลเดอร์สาขา</span>
+                  <span>โฟลเดอร์สาขา</span>
                 </button>
               </div>
 
-              {/* ปุ่มปรับรูปแบบโฟลเดอร์บนคอม (Bookmark Bar / Desktop Icons / Cards + จำนวนคอลัมน์) */}
-              <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+              {/* ปุ่มปรับรูปแบบโฟลเดอร์บนคอม (Bookmark Bar / Desktop Icons / Cards + จำนวนคอลัมน์) - พอดีจอทุกขนาด ไม่ล้นขอบ */}
+              <div className="w-full lg:w-auto flex flex-col sm:flex-row items-stretch sm:items-center gap-1.5 pt-2 lg:pt-0 border-t lg:border-t-0 border-slate-200/80 dark:border-white/10 shrink-0">
                 <div
-                  className={`inline-flex items-center p-0.5 rounded-xl border ${
+                  className={`w-full sm:w-auto grid grid-cols-3 sm:inline-flex items-center p-0.5 rounded-xl border ${
                     isLightTheme ? 'bg-white border-slate-200' : 'bg-slate-950 border-white/15'
                   }`}
                 >
                   {(
                     [
-                      { id: 'bookmark-bar', label: 'แถบกะทัดรัด (เหมือนบนคอม)' },
-                      { id: 'desktop-icons', label: 'ไอคอนโฟลเดอร์' },
-                      { id: 'cards', label: 'การ์ดละเอียด' },
-                    ] as { id: FolderDisplayStyle; label: string }[]
+                      { id: 'bookmark-bar', shortLabel: 'แถบกะทัดรัด', fullLabel: 'แถบกะทัดรัด (เหมือนบนคอม)' },
+                      { id: 'desktop-icons', shortLabel: 'ไอคอน', fullLabel: 'ไอคอนโฟลเดอร์' },
+                      { id: 'cards', shortLabel: 'การ์ด', fullLabel: 'การ์ดละเอียด' },
+                    ] as { id: FolderDisplayStyle; shortLabel: string; fullLabel: string }[]
                   ).map((modeOpt) => (
                     <button
                       key={modeOpt.id}
                       type="button"
                       onClick={() => updateFolderLayoutPrefs({ displayStyle: modeOpt.id })}
-                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition ${
+                      className={`px-2 sm:px-2.5 py-1.5 sm:py-1 rounded-lg text-[11px] font-bold text-center transition truncate ${
                         folderLayoutPrefs.displayStyle === modeOpt.id
                           ? 'bg-sky-600 text-white shadow-xs'
                           : isLightTheme
                           ? 'text-slate-600 hover:text-slate-900'
                           : 'text-slate-400 hover:text-white'
                       }`}
+                      title={modeOpt.fullLabel}
                     >
-                      {modeOpt.label}
+                      <span className="sm:hidden">{modeOpt.shortLabel}</span>
+                      <span className="hidden sm:inline">{modeOpt.fullLabel}</span>
                     </button>
                   ))}
                 </div>
@@ -2068,7 +2070,7 @@ export function App() {
                   <button
                     type="button"
                     onClick={() => setIsFolderCustomizeOpen((prev) => !prev)}
-                    className={`px-2.5 py-1.5 rounded-xl border text-[11px] font-bold flex items-center gap-1 transition ${
+                    className={`w-full sm:w-auto justify-center px-2.5 py-1.5 rounded-xl border text-[11px] font-bold flex items-center gap-1 transition ${
                       isFolderCustomizeOpen
                         ? 'bg-sky-600 border-sky-600 text-white'
                         : isLightTheme
